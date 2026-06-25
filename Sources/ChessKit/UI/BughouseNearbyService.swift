@@ -245,7 +245,7 @@ struct BughouseNearbyLobby: View {
     @State private var mode = 0                                  // 0 host · 1 join
     @State private var plan = [0, 2, 2, 1]                       // per seat: 0 You · 1 Bot · 2 Open
     @State private var level = 4
-    @State private var tc = 1
+    @State private var tc = 3   // default 10 min
     private let tcs: [(String, Double, Double)] = [("No timer", 0, 0), ("3 min", 180, 0), ("5 min", 300, 0), ("10 min", 600, 0)]
 
     var body: some View {

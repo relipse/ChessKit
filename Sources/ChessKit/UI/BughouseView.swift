@@ -248,7 +248,7 @@ public struct BughouseSetupView: View {
     let onStart: ([BughouseSeat: SeatPlayer], Double, Double) -> Void
     @State private var human: [Bool] = [true, false, false, false]
     @State private var level = 4
-    @State private var timeControl = 1   // index into timeControls
+    @State private var timeControl = 3   // index into timeControls (default 10 min)
 
     // base seconds (0 = no timer), increment seconds.
     private let timeControls: [(label: String, base: Double, inc: Double)] = [

@@ -149,7 +149,7 @@ public final class BughouseController: ObservableObject {
     }
 
     public init(seats: [BughouseSeat: SeatPlayer], store: BughouseStore? = nil, restore: BughouseSave? = nil,
-                baseTime: Double = 180, increment: Double = 2) {
+                baseTime: Double = 600, increment: Double = 0) {
         if let restore {
             var s: [BughouseSeat: SeatPlayer] = [:]
             for seat in BughouseSeat.allCases {
