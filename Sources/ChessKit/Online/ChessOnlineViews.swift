@@ -61,11 +61,17 @@ struct AccountView: View {
             Picker("", selection: $registering) { Text("Create Account").tag(true); Text("Sign In").tag(false) }
                 .pickerStyle(.segmented)
             Section {
-                if registering { TextField("Name", text: $name) }
+                if registering { TextField("Username", text: $name) }
                 TextField("Email", text: $email).autocorrectionDisabled()
                 SecureField("Password", text: $password)
             } footer: {
-                if let e = online.lastError { Text(e).foregroundStyle(.red) }
+                VStack(alignment: .leading, spacing: 6) {
+                    if registering {
+                        Label("Pick a family-friendly username — other players will see it. Offensive names may be removed.",
+                              systemImage: "person.2.fill").font(.caption)
+                    }
+                    if let e = online.lastError { Text(e).foregroundStyle(.red) }
+                }
             }
             Section {
                 Button {
