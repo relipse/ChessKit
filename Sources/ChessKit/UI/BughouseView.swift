@@ -252,7 +252,7 @@ public struct BughouseSetupView: View {
 
     // base seconds (0 = no timer), increment seconds.
     private let timeControls: [(label: String, base: Double, inc: Double)] = [
-        ("No timer", 0, 0), ("3 min", 180, 0), ("5 min", 300, 0), ("10 min", 600, 0),
+        ("No timer", 0, 0), ("3 min", 180, 0), ("5 min", 300, 0), ("10 min", 600, 0), ("15 min", 900, 0),
     ]
 
     public init(brand: Brand, onNearby: @escaping () -> Void = {},
@@ -352,7 +352,7 @@ public struct BughouseGameView: View {
     @AppStorage("bug.board1Theme") private var board1Theme = "brown"
     @AppStorage("bug.board2Theme") private var board2Theme = "green"
     @AppStorage("bug.talkButtons") private var talkButtons = false   // false = menu, true = on-screen buttons
-    private let overhead: CGFloat = 132   // two reserves + two clock rows + turn line
+    private let overhead: CGFloat = 158   // two (larger) reserves + two clock rows + turn line
 
     public init(brand: Brand, appearance: Appearance = .shared,
                 controller: BughouseController, onExit: @escaping () -> Void) {

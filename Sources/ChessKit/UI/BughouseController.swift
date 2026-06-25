@@ -339,6 +339,7 @@ public final class BughouseController: ObservableObject {
     private func apply(_ b: Int, _ move: Move) {
         var bd = boards[b]
         let mover = bd.pos.sideToMove
+        var passedToOtherBoard = false
         if move.isDrop {
             bd.pos.squares[move.to] = Piece(color: mover, kind: move.dropKind!)
             bd.pos.pockets[mover]?.remove(move.dropKind!)
@@ -356,6 +357,7 @@ public final class BughouseController: ObservableObject {
                 // (a promoted pawn reverts to a pawn).
                 let kind: PieceKind = before.promoted.contains(csq) ? .pawn : cap.kind
                 boards[1 - b].pos.pockets[cap.color]?.add(kind)
+                passedToOtherBoard = true
             }
         }
         bd.selected = nil; bd.targets = []; bd.pocketSel = nil
@@ -366,7 +368,11 @@ public final class BughouseController: ObservableObject {
         if !replaying {
             if role == .host { net?.broadcastMove(board: b, move: move) }   // tell the peers
             if role != .client { autosave() }
-            if !status.isOver && role != .client { maybeStartAI(b) }   // host/offline run the bots
+            if !status.isOver && role != .client {
+                maybeStartAI(b)   // host/offline run the bots
+                // A piece just arrived on the other board — wake its bot if it was stuck waiting for one.
+                if passedToOtherBoard, !thinking[1 - b] { maybeStartAI(1 - b) }
+            }
         }
     }
 
@@ -378,13 +384,28 @@ public final class BughouseController: ObservableObject {
         for b in 0..<2 {
             let st = rules.status(boards[b].pos)
             if case .checkmate(let winner) = st {
+                // In bughouse a "mate" you could block by DROPPING a piece isn't a real mate — the
+                // player just sits on their clock waiting for their partner to send a blocker. Only a
+                // mate that no drop can stop (knight/pawn/contact/double check) actually ends the board.
+                if blockableByDrop(boards[b].pos) { continue }
                 let winningSeat = seat(board: b, color: winner)
                 status = .win(team: winningSeat.team, reason: "Checkmate on Board \(b + 1)")
                 aiTasks.forEach { $0?.cancel() }
                 return
             }
-            if case .stalemate = st { status = .draw("Stalemate on Board \(b + 1)"); return }
+            // Stalemate isn't a draw in bughouse — the side to move waits for a piece to drop and move.
         }
+    }
+
+    /// Could the side-to-move escape check by dropping a piece on an empty square (if it had one)?
+    private func blockableByDrop(_ pos: Position) -> Bool {
+        let side = pos.sideToMove
+        for sq in 0..<64 where pos.squares[sq] == nil {
+            var t = pos
+            t.squares[sq] = Piece(color: side, kind: .queen)
+            if !t.inCheck(side) { return true }
+        }
+        return false
     }
 
     // MARK: AI
@@ -394,6 +415,7 @@ public final class BughouseController: ObservableObject {
         guard case .computer(let diff) = player(b, boards[b].pos.sideToMove) else { return }
         let moverSeat = seat(board: b, color: boards[b].pos.sideToMove)
         if sitting.contains(moverSeat) { thinking[b] = false; aiTasks[b]?.cancel(); return }   // told to sit — hold
+        if rules.legalMoves(boards[b].pos).isEmpty { thinking[b] = false; aiTasks[b]?.cancel(); return }   // stuck — wait for a piece
         thinking[b] = true
         aiTasks[b]?.cancel()
         let snapshot = boards[b].pos
@@ -414,7 +436,7 @@ public final class BughouseController: ObservableObject {
             // it only changes the reserve, not the board. Bail only if the board itself moved on / off turn.
             guard self.boards[b].pos.squares == snapshot.squares,
                   self.boards[b].pos.sideToMove == snapshot.sideToMove else { self.maybeStartAI(b); return }
-            guard let m = await best else { self.maybeStartAI(b); return }
+            guard let m = await best else { self.thinking[b] = false; return }   // stuck/no move — wait
             let legal = self.rules.legalMoves(self.boards[b].pos)
             if legal.contains(where: { $0.from == m.from && $0.to == m.to && $0.dropKind == m.dropKind && $0.promotion == m.promotion }) {
                 self.apply(b, m)

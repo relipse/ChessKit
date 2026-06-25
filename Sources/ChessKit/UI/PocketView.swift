@@ -27,7 +27,7 @@ public struct PocketView: View {
         self.appearance = appearance; self.onSelect = onSelect
     }
 
-    private var dim: CGFloat { compact ? 30 : 46 }
+    private var dim: CGFloat { compact ? 42 : 52 }   // larger reserve chips — easier to grab/drop
 
     private let order: [PieceKind] = [.pawn, .knight, .bishop, .rook, .queen]
 
