@@ -238,6 +238,22 @@ final class ChessKitTests: XCTestCase {
         XCTAssertEqual(game.selected, "e4".squareIndex!)
     }
 
+    @MainActor
+    func testBughousePassesCaptureToPartner() {
+        // All-human so we can drive both boards by hand.
+        var seats: [BughouseSeat: SeatPlayer] = [:]
+        for s in BughouseSeat.allCases { seats[s] = .human }
+        let g = BughouseController(seats: seats)
+        // Board 1: 1.e4 d5 2.exd5 — White captures a black pawn.
+        g.move(board: 0, from: "e2".squareIndex!, to: "e4".squareIndex!)
+        g.move(board: 0, from: "d7".squareIndex!, to: "d5".squareIndex!)
+        g.move(board: 0, from: "e4".squareIndex!, to: "d5".squareIndex!)
+        // The captured black pawn must land in Board 2's BLACK reserve (the partner, Team A).
+        XCTAssertEqual(g.boards[1].pos.pockets[.black]?.count(.pawn), 1)
+        XCTAssertEqual(g.boards[0].pos.pockets[.black]?.count(.pawn), 0)
+        XCTAssertEqual(BughouseSeat.b1White.team, BughouseSeat.b2Black.team)  // partners
+    }
+
     func testPawnDuelStartAndPlay() {
         let v = PawnDuelChess()
         let pos = v.startPosition()

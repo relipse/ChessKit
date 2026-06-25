@@ -89,6 +89,7 @@ public struct MainMenuView: View {
     @State private var showMore = false
     @State private var showNearby = false
     @State private var showSetup = false
+    @State private var showPieceSetup = false
     @Environment(\.requestReview) private var requestReview
     @AppStorage("ck.launchCount") private var launchCount = 0
     @AppStorage("ck.didPromptReview") private var didPromptReview = false
@@ -112,6 +113,9 @@ public struct MainMenuView: View {
                                prominent: store.autosave == nil) { showNewGame = true }
                     if variant is Chess960 {
                         menuButton("Set Up Position", systemImage: "slider.horizontal.below.square.filled.and.square") { showSetup = true }
+                    }
+                    if variant is StandardChess {
+                        menuButton("Set Up Pieces", systemImage: "square.grid.3x3.square") { showPieceSetup = true }
                     }
                     menuButton("Play Nearby", systemImage: "wifi") { showNearby = true }
                     if !store.slots.isEmpty {
@@ -162,6 +166,11 @@ public struct MainMenuView: View {
         .sheet(isPresented: $showSetup) {
             Chess960SetupView(brand: brand, store: store, appearance: appearance) { pos, mode in
                 onLaunch(.fresh(mode: mode, humanColor: .white, difficulty: .medium, start: pos))
+            }
+        }
+        .sheet(isPresented: $showPieceSetup) {
+            PositionSetupView(brand: brand, appearance: appearance) { pos, mode in
+                onLaunch(.fresh(mode: mode, humanColor: pos.sideToMove, difficulty: .medium, start: pos))
             }
         }
         .sheet(isPresented: $showLoad) {
