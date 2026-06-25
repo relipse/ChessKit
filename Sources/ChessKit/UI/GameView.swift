@@ -16,6 +16,9 @@ public struct ChessGameView: View {
     @State private var saveName = ""
     /// Nearby transport (only set in `.nearby` mode); wired to the controller on appear.
     private let nearby: NearbyService?
+    /// Online (internet) session; wired to the controller on appear.
+    private let onlineSession: ChessOnline.OnlineSession?
+    @State private var relayTask: Task<Void, Never>?
 
     /// Simple init (no menu/persistence) — handy for previews/embedding.
     public init(variant: ChessVariant, brand: Brand, appearance: Appearance = .shared, suite: String? = nil) {
@@ -24,6 +27,7 @@ public struct ChessGameView: View {
         self.brand = brand
         self.onExit = nil
         self.nearby = nil
+        self.onlineSession = nil
     }
 
     /// Full init used by `ChessRootView`: launches a fresh or restored game and can
@@ -46,6 +50,7 @@ public struct ChessGameView: View {
         self.brand = brand
         self.onExit = onExit
         self.nearby = nil
+        self.onlineSession = nil
     }
 
     /// Nearby (two-device) game. The transport must already be connected (`nearby.ready`).
@@ -58,6 +63,20 @@ public struct ChessGameView: View {
         self.brand = brand
         self.onExit = onExit
         self.nearby = service
+        self.onlineSession = nil
+    }
+
+    /// Internet game. Moves relay through the Kinsman server; `session` carries the game id + colour.
+    public init(variant: ChessVariant, brand: Brand, appearance: Appearance = .shared,
+                suite: String? = nil, store: GameStore, online session: ChessOnline.OnlineSession,
+                onExit: (() -> Void)? = nil) {
+        _game = StateObject(wrappedValue: GameController(variant: variant, suite: suite, store: store,
+                                                         mode: .nearby, localColor: session.localColor))
+        self.appearance = appearance
+        self.brand = brand
+        self.onExit = onExit
+        self.nearby = nil
+        self.onlineSession = session
     }
 
     public var body: some View {
@@ -108,7 +127,20 @@ public struct ChessGameView: View {
                 game.onLocalMove = { move in nearby.send(move) }
                 nearby.onReceiveMove = { [weak game] move in game?.applyRemoteMove(move) }
             }
+            if let session = onlineSession {
+                let online = ChessOnline.shared
+                game.localColor = session.localColor
+                game.onLocalMove = { [weak game] move in
+                    guard let game else { return }
+                    let ply = game.history.count - 1
+                    Task { await online.postMove(gameId: session.gameId, board: 0, ply: ply, payload: ChessOnline.encode(move)) }
+                }
+                relayTask = Task {
+                    await online.runRelay(session: session, isMine: { $0 == online.userId }) { [weak game] m in game?.applyRemoteMove(m) }
+                }
+            }
         }
+        .onDisappear { relayTask?.cancel() }
     }
 
     // MARK: Pieces of the screen

@@ -129,6 +129,29 @@ public final class ChessOnline: ObservableObject {
 
     public struct OnlineGame { public let id: String; public let code: String; public let seats: Int }
 
+    /// A live single-board online game this device is playing.
+    public struct OnlineSession: Equatable, Sendable {
+        public let gameId: String
+        public let localColor: PieceColor
+        public init(gameId: String, localColor: PieceColor) { self.gameId = gameId; self.localColor = localColor }
+    }
+
+    /// Relay loop for a single-board online game: applies the opponent's moves into the controller.
+    public func runRelay(session: OnlineSession, isMine: @escaping (String?) -> Bool, apply: @escaping (Move) -> Void) async {
+        var since = -1
+        while !Task.isCancelled {
+            if let r = await poll(gameId: session.gameId, since: since) {
+                for mv in r.moves {
+                    let ply = mv["ply"] as? Int ?? -1
+                    guard ply > since else { continue }
+                    since = ply
+                    if !isMine(mv["by_user"] as? String), let p = mv["payload"] as? String, let m = ChessOnline.decode(p) { apply(m) }
+                }
+            }
+            try? await Task.sleep(nanoseconds: 1_500_000_000)
+        }
+    }
+
     public func createGame(variant: String, base baseSecs: Int, increment: Int) async -> OnlineGame? {
         do { let r = try await request("game_create", method: "POST",
                 body: ["variant": variant, "base": baseSecs, "increment": increment])
@@ -145,12 +168,49 @@ public final class ChessOnline: ObservableObject {
         _ = try? await request("move_post", method: "POST",
             body: ["game_id": gameId, "board": board, "ply": ply, "payload": payload])
     }
+    public func startGame(gameId: String) async {
+        _ = try? await request("game_start", method: "POST", body: ["game_id": gameId])
+    }
+    /// (status, number of seats that are filled by a human or bot).
+    public func gameInfo(gameId: String) async -> (status: String, filled: Int)? {
+        do {
+            let r = try await request("game_get&id=\(gameId)")
+            let status = (r["game"] as? [String: Any])?["status"] as? String ?? "lobby"
+            let seats = r["seats"] as? [[String: Any]] ?? []
+            let filled = seats.filter { $0["name"] is String || ($0["is_bot"] as? Int) == 1 }.count
+            return (status, filled)
+        } catch { return nil }
+    }
     public func poll(gameId: String, since: Int) async -> (moves: [[String: Any]], status: String)? {
         do { let r = try await request("move_poll&game_id=\(gameId)&since=\(since)")
             let moves = r["moves"] as? [[String: Any]] ?? []
             let status = (r["game"] as? [String: Any])?["status"] as? String ?? "lobby"
             return (moves, status)
         } catch { return nil }
+    }
+
+    public func deleteAccount() async {
+        await run { _ = try await self.request("delete_account", method: "POST"); self.signOut() }
+    }
+
+    // MARK: Compact move encoding for the relay
+
+    public static func encode(_ m: Move) -> String {
+        if m.isDrop { return "D\(m.dropKind.map { String($0.rawValue) } ?? "p")\(m.to)" }
+        var s = "\(m.from).\(m.to)"
+        if let p = m.promotion { s += ".\(p.rawValue)" }
+        return s
+    }
+    public static func decode(_ s: String) -> Move? {
+        if s.hasPrefix("D") {
+            let body = Array(s.dropFirst())
+            guard let kind = PieceKind(rawValue: body.first ?? "p"), let to = Int(String(body.dropFirst())) else { return nil }
+            return Move(drop: kind, to: to)
+        }
+        let p = s.split(separator: ".")
+        guard p.count >= 2, let from = Int(p[0]), let to = Int(p[1]) else { return nil }
+        let promo = p.count >= 3 ? PieceKind(rawValue: Character(String(p[2]))) : nil
+        return Move(from: from, to: to, promotion: promo)
     }
 
     private func run(_ work: @escaping () async throws -> Void) async {

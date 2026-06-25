@@ -167,7 +167,7 @@ public struct MainMenuView: View {
         .sheet(isPresented: $showNearby) {
             NearbyLobbyView(variant: variant, brand: brand, appearance: appearance, store: store)
         }
-        .sheet(isPresented: $showOnline) { InternetGameView(brand: brand) }
+        .sheet(isPresented: $showOnline) { InternetGameView(brand: brand, variant: variant, store: store, appearance: appearance) }
         .sheet(isPresented: $showSetup) {
             Chess960SetupView(brand: brand, store: store, appearance: appearance) { pos, mode in
                 onLaunch(.fresh(mode: mode, humanColor: .white, difficulty: .medium, start: pos))
