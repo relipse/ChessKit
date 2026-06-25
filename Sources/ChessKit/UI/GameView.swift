@@ -102,7 +102,7 @@ public struct ChessGameView: View {
         .sheet(isPresented: $showMore) { MoreGamesView(currentAppStoreID: brand.appStoreID, brand: brand) }
         .tint(brand.accent)
         .onAppear {
-            if game.mode == .computer, game.humanColor == .black { game.startIfAIOpens() }
+            if (game.mode == .computer && game.humanColor == .black) || game.mode == .watch { game.startIfAIOpens() }
             if let nearby {
                 game.localColor = nearby.localColor
                 game.onLocalMove = { move in nearby.send(move) }
@@ -147,6 +147,7 @@ public struct ChessGameView: View {
         case .computer: return "vs Computer · \(game.difficulty.title)"
         case .passAndPlay: return "2 Players · this device"
         case .nearby: return "Nearby · you play \(game.localColor == .white ? "White" : "Black")"
+        case .watch: return "Computer vs Computer · \(game.difficulty.title)"
         }
     }
 

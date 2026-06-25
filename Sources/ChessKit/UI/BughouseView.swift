@@ -124,8 +124,9 @@ struct BughouseMenuView: View {
             if launchCount >= 10 && !didPromptReview { didPromptReview = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { requestReview() } }
         }
-        .sheet(isPresented: $showSetup) {
-            BughouseSetupView(brand: brand, onNearby: { showSetup = false; onNearby() }) { s, base, inc in showSetup = false; onNew(s, base, inc) }
+        .bugFullCover(isPresented: $showSetup) {
+            BughouseSetupView(brand: brand, onCancel: { showSetup = false },
+                              onNearby: { showSetup = false; onNearby() }) { s, base, inc in showSetup = false; onNew(s, base, inc) }
         }
         .sheet(isPresented: $showLoad) { BughouseLoadView(brand: brand, store: store) { onResume($0) } }
         .sheet(isPresented: $showMore) { MoreGamesView(currentAppStoreID: brand.appStoreID, brand: brand) }
@@ -244,6 +245,7 @@ struct BughouseAppearanceView: View {
 /// Seat setup with quick presets + per-seat control.
 public struct BughouseSetupView: View {
     let brand: Brand
+    var onCancel: () -> Void = {}
     let onNearby: () -> Void
     let onStart: ([BughouseSeat: SeatPlayer], Double, Double) -> Void
     @State private var human: [Bool] = [true, false, false, false]
@@ -255,17 +257,15 @@ public struct BughouseSetupView: View {
         ("No timer", 0, 0), ("3 min", 180, 0), ("5 min", 300, 0), ("10 min", 600, 0), ("15 min", 900, 0),
     ]
 
-    public init(brand: Brand, onNearby: @escaping () -> Void = {},
+    public init(brand: Brand, onCancel: @escaping () -> Void = {}, onNearby: @escaping () -> Void = {},
                 onStart: @escaping ([BughouseSeat: SeatPlayer], Double, Double) -> Void) {
-        self.brand = brand; self.onNearby = onNearby; self.onStart = onStart
+        self.brand = brand; self.onCancel = onCancel; self.onNearby = onNearby; self.onStart = onStart
     }
 
     public var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 16) {
-                    Text("A piece you capture is passed to your partner's reserve on the other board to drop in.")
-                        .font(.callout).foregroundStyle(.secondary).multilineTextAlignment(.center).padding(.horizontal)
+                VStack(spacing: 12) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Quick setup").font(.headline)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
@@ -283,27 +283,26 @@ public struct BughouseSetupView: View {
                     }.padding(.horizontal)
                     teamCard("Team A", seats: [.b1White, .b2Black])
                     teamCard("Team B", seats: [.b1Black, .b2White])
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 4) {
                         Text("Clock").font(.headline)
                         Picker("Time", selection: $timeControl) {
                             ForEach(timeControls.indices, id: \.self) { Text(timeControls[$0].label).tag($0) }
-                        }.pickerStyle(.menu)
-                        Text("Each player has their own clock — you can stall on your time waiting for your partner to send a piece. Run out and your team loses.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        }.pickerStyle(.segmented)
+                        if human.contains(false) {
+                            Picker("Computer level", selection: $level) { ForEach(1...10, id: \.self) { Text("Lvl \($0)").tag($0) } }
+                                .pickerStyle(.menu)
+                        }
                     }.padding(.horizontal)
-                    if human.contains(false) {
-                        VStack(alignment: .leading) {
-                            Text("Computer strength").font(.headline)
-                            Picker("Level", selection: $level) { ForEach(1...10, id: \.self) { Text("Level \($0)").tag($0) } }
-                            Text(Difficulty(level: level).blurb).font(.caption).foregroundStyle(.secondary)
-                        }.padding(.horizontal)
-                    }
-                    Button { let tc = timeControls[timeControl]; onStart(buildSeats(), tc.base, tc.inc) } label: {
-                        Text("Start Match").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 12)
-                    }.buttonStyle(.borderedProminent).padding(.horizontal)
-                }.padding(.vertical)
+                }.padding(.vertical, 10)
             }
             .navigationTitle("New Bughouse")
+            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel", action: onCancel) } }
+            .safeAreaInset(edge: .bottom) {
+                Button { let tc = timeControls[timeControl]; onStart(buildSeats(), tc.base, tc.inc) } label: {
+                    Text("Start Match").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 14)
+                }.buttonStyle(.borderedProminent).padding(.horizontal).padding(.bottom, 6)
+                .background(.ultraThinMaterial)
+            }
         }.tint(brand.accent)
     }
 
@@ -612,4 +611,15 @@ enum DemoBughouse {
 
 private extension String {
     var sq: Int { let c = Array(self); return rankIndex(c[1])! * 8 + fileIndex(c[0])! }
+}
+
+private extension View {
+    /// Full-screen on iOS/Catalyst (more room for the setup form); a sheet on plain macOS.
+    @ViewBuilder func bugFullCover<C: View>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> C) -> some View {
+        #if os(iOS)
+        self.fullScreenCover(isPresented: isPresented, content: content)
+        #else
+        self.sheet(isPresented: isPresented, content: content)
+        #endif
+    }
 }

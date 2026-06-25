@@ -5,6 +5,7 @@ public enum GameMode: String, Codable, Sendable {
     case computer      // one human vs the built-in AI
     case passAndPlay   // two humans sharing one device
     case nearby        // two humans on two nearby devices (MultipeerConnectivity)
+    case watch         // computer vs computer — the human just watches
 }
 
 /// Drives a game of any `ChessVariant` — vs the computer, pass-and-play, or nearby.
@@ -36,6 +37,7 @@ public final class GameController: ObservableObject {
         case .computer: return humanColor == .black
         case .nearby: return localColor == .black
         case .passAndPlay: return position.sideToMove == .black   // rotate to face the mover
+        case .watch: return false                                 // fixed orientation while watching
         }
     }
     /// Fog of war only applies to vs-computer Kriegspiel (two-device/hot-seat can't hide pieces).
@@ -115,6 +117,7 @@ public final class GameController: ObservableObject {
         case .computer: return position.sideToMove == humanColor
         case .nearby: return position.sideToMove == localColor
         case .passAndPlay: return true
+        case .watch: return false   // both sides are the computer
         }
     }
     public var checkSquare: Int? {
@@ -347,6 +350,7 @@ public final class GameController: ObservableObject {
         case .computer: maybeStartAI()
         case .nearby: onLocalMove?(move)   // send to the peer
         case .passAndPlay: break           // the other human moves next on this device
+        case .watch: break                 // AI drives both sides (chained from maybeStartAI)
         }
     }
 
@@ -378,22 +382,29 @@ public final class GameController: ObservableObject {
     // MARK: AI opponent
 
     private func maybeStartAI() {
-        guard mode == .computer, !status.isOver, position.sideToMove != humanColor else { return }
+        guard !status.isOver else { return }
+        let aiToMove = (mode == .watch) || (mode == .computer && position.sideToMove != humanColor)
+        guard aiToMove else { return }
         thinking = true
         let snapshot = position
         let engine = self.engine
-        let hidden = variant.hidesOpponentPieces
+        let hidden = variant.hidesOpponentPieces && mode == .computer   // no fog while watching
+        let watching = mode == .watch
         Task { [weak self] in
             // Compute off the main actor; small artificial floor so it never feels instant.
             async let move: Move? = Task.detached(priority: .userInitiated) {
                 engine.bestMove(in: snapshot)
             }.value
-            try? await Task.sleep(nanoseconds: UInt64.random(in: 900_000_000...2_000_000_000))
+            // Move slower in watch mode so a human can follow along.
+            let lo: UInt64 = watching ? 1_500_000_000 : 900_000_000
+            let hi: UInt64 = watching ? 2_800_000_000 : 2_000_000_000
+            try? await Task.sleep(nanoseconds: UInt64.random(in: lo...hi))
             guard let self, let chosen = await move else { self?.thinking = false; return }
             guard self.position == snapshot else { return }   // game reset mid-think
             if hidden { self.announceOpponentMove(chosen) }
             self.apply(chosen)
             self.thinking = false
+            if self.mode == .watch { self.maybeStartAI() }   // chain — the other side moves next
         }
     }
 
@@ -453,6 +464,7 @@ public final class GameController: ObservableObject {
         case .computer: return isHumanTurn ? "YOUR MOVE" : "…"
         case .passAndPlay: return position.sideToMove == .white ? "WHITE TO MOVE" : "BLACK TO MOVE"
         case .nearby: return isHumanTurn ? "YOUR MOVE" : "OPPONENT'S MOVE"
+        case .watch: return position.sideToMove == .white ? "WHITE…" : "BLACK…"
         }
     }
 }

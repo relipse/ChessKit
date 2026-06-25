@@ -260,9 +260,14 @@ struct NewGameOptionsView: View {
                     Picker("Mode", selection: $mode) {
                         Text("Computer").tag(GameMode.computer)
                         Text("2 Players").tag(GameMode.passAndPlay)
+                        Text("Watch").tag(GameMode.watch)
                     }.pickerStyle(.segmented)
                     if mode == .passAndPlay {
                         Text("Two players take turns on this device.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    if mode == .watch {
+                        Text("Sit back and watch the computer play itself.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 }
@@ -273,7 +278,9 @@ struct NewGameOptionsView: View {
                             Text("Black").tag(PieceColor.black)
                         }.pickerStyle(.segmented)
                     }
-                    Section("Difficulty") { DifficultyPicker(difficulty: $difficulty) }
+                }
+                if mode == .computer || mode == .watch {
+                    Section(mode == .watch ? "Strength" : "Difficulty") { DifficultyPicker(difficulty: $difficulty) }
                 }
                 Section {
                     Button { onStart(mode, color, difficulty); dismiss() } label: {
