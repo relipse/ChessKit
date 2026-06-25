@@ -127,7 +127,6 @@ public struct MainMenuView: View {
                     menuButton("Leaderboard", systemImage: "trophy.fill") {
                         GameCenter.shared.showDashboard(leaderboardID: brand.leaderboardID)
                     }
-                    menuButton("More Chess Games", systemImage: "square.grid.2x2.fill") { showMore = true }
                     menuButton("How to Play", systemImage: "book.fill") { showRules = true }
                     menuButton("Appearance", systemImage: "paintpalette.fill") { showAppearance = true }
                     HStack(spacing: 12) {
@@ -139,6 +138,7 @@ public struct MainMenuView: View {
                         compactButton("Rate", systemImage: "star.fill") { requestReview() }
                         compactButton("About", systemImage: "info.circle.fill") { showAbout = true }
                     }
+                    menuButton("More Chess Games", systemImage: "square.grid.2x2.fill") { showMore = true }   // always last
                 }
                 .frame(maxWidth: 420)
                 Spacer()

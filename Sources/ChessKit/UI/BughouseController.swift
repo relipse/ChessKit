@@ -30,8 +30,13 @@ public struct BughouseSave: Codable, Identifiable, Sendable {
     public var date: Date
     public var seats: [SeatPlayer]          // indexed by BughouseSeat.rawValue (0–3)
     public var log: [BughouseLogEntry]
-    public init(id: UUID = UUID(), name: String, date: Date, seats: [SeatPlayer], log: [BughouseLogEntry]) {
+    public var baseTime: Double?            // time control (nil → legacy default)
+    public var increment: Double?
+    public var clocks: [Double]?            // seconds remaining per seat at save time
+    public init(id: UUID = UUID(), name: String, date: Date, seats: [SeatPlayer], log: [BughouseLogEntry],
+                baseTime: Double? = nil, increment: Double? = nil, clocks: [Double]? = nil) {
         self.id = id; self.name = name; self.date = date; self.seats = seats; self.log = log
+        self.baseTime = baseTime; self.increment = increment; self.clocks = clocks
     }
 }
 
@@ -112,13 +117,20 @@ public final class BughouseController: ObservableObject {
     private let rules = CrazyhouseChess()
     private var aiTasks: [Task<Void, Never>?] = [nil, nil]
 
+    // Chess clocks (the heart of bughouse — you can stall, sitting on your time for a piece).
+    @Published public private(set) var clock: [Double]   // seconds remaining, by seat.rawValue
+    public let baseTime: Double
+    public let increment: Double
+    private var tickTask: Task<Void, Never>?
+
     private static func freshBoards() -> [Board] {
         var start = Position.standard
         start.pockets = [.white: Pocket(), .black: Pocket()]
         return [Board(pos: start), Board(pos: start)]
     }
 
-    public init(seats: [BughouseSeat: SeatPlayer], store: BughouseStore? = nil, restore: BughouseSave? = nil) {
+    public init(seats: [BughouseSeat: SeatPlayer], store: BughouseStore? = nil, restore: BughouseSave? = nil,
+                baseTime: Double = 180, increment: Double = 2) {
         if let restore {
             var s: [BughouseSeat: SeatPlayer] = [:]
             for seat in BughouseSeat.allCases {
@@ -126,22 +138,62 @@ public final class BughouseController: ObservableObject {
             }
             self.seats = s
             self.gameID = restore.id
+            self.baseTime = restore.baseTime ?? baseTime
+            self.increment = restore.increment ?? increment
         } else {
             self.seats = seats
+            self.baseTime = baseTime
+            self.increment = increment
         }
         self.store = store
         self.boards = BughouseController.freshBoards()
-        if let restore { replayLog(restore.log) }
+        self.clock = [Double](repeating: self.baseTime, count: 4)
+        if let restore {
+            replayLog(restore.log)
+            if let c = restore.clocks, c.count == 4 { self.clock = c }
+        }
         for b in 0..<2 { maybeStartAI(b) }
+        startTicking()
     }
 
     public func newGame() {
-        aiTasks.forEach { $0?.cancel() }
+        aiTasks.forEach { $0?.cancel() }; tickTask?.cancel()
         gameID = UUID()
         boards = BughouseController.freshBoards()
+        clock = [Double](repeating: baseTime, count: 4)
         moveLog = []; status = .ongoing; thinking = [false, false]
         store?.setAutosave(nil)
         for b in 0..<2 { maybeStartAI(b) }
+        startTicking()
+    }
+
+    /// Run the clocks: both boards' on-move seats tick down in real time; a flag ends the match.
+    private func startTicking() {
+        tickTask?.cancel()
+        tickTask = Task { [weak self] in
+            var last = Date()
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 150_000_000)
+                guard let self else { return }
+                if self.status.isOver { return }
+                let now = Date(); let dt = now.timeIntervalSince(last); last = now
+                if self.status.isOver || self.replaying { continue }
+                for b in 0..<2 {
+                    let s = self.seat(board: b, color: self.boards[b].pos.sideToMove)
+                    self.clock[s.rawValue] = max(0, self.clock[s.rawValue] - dt)
+                    if self.clock[s.rawValue] <= 0 {
+                        self.status = .win(team: 1 - s.team,
+                            reason: "Board \(b + 1) \(s.color == .white ? "White" : "Black") flagged")
+                        self.aiTasks.forEach { $0?.cancel() }
+                    }
+                }
+            }
+        }
+    }
+
+    public func clockText(seat: BughouseSeat) -> String {
+        let t = max(0, clock[seat.rawValue])
+        return String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
     }
 
     private func replayLog(_ log: [BughouseLogEntry]) {
@@ -154,7 +206,8 @@ public final class BughouseController: ObservableObject {
 
     public func toSave(name: String) -> BughouseSave {
         let arr = BughouseSeat.allCases.map { seats[$0] ?? .computer(.medium) }
-        return BughouseSave(id: gameID, name: name, date: Date(), seats: arr, log: moveLog)
+        return BughouseSave(id: gameID, name: name, date: Date(), seats: arr, log: moveLog,
+                            baseTime: baseTime, increment: increment, clocks: clock)
     }
     public func saveSlot(name: String) { store?.save(toSave(name: name)) }
     private func autosave() {
@@ -272,6 +325,7 @@ public final class BughouseController: ObservableObject {
         bd.selected = nil; bd.targets = []; bd.pocketSel = nil
         boards[b] = bd
         moveLog.append(BughouseLogEntry(board: b, move: move))
+        if !replaying { clock[seat(board: b, color: mover).rawValue] += increment }
         updateStatus()
         if !replaying {
             autosave()

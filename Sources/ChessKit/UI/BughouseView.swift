@@ -10,7 +10,7 @@ public struct BughouseRootView: View {
     @State private var launch: Launch?
 
     enum Launch: Identifiable {
-        case fresh([BughouseSeat: SeatPlayer]), restore(BughouseSave)
+        case fresh([BughouseSeat: SeatPlayer], Double, Double), restore(BughouseSave)
         var id: String { if case .restore(let s) = self { return s.id.uuidString }; return "fresh" }
     }
 
@@ -28,7 +28,7 @@ public struct BughouseRootView: View {
                 gameView(launch)
             } else {
                 BughouseMenuView(brand: brand, store: store, appearance: appearance,
-                                 onNew: { launch = .fresh($0) }, onResume: { launch = .restore($0) })
+                                 onNew: { launch = .fresh($0, $1, $2) }, onResume: { launch = .restore($0) })
             }
         }
         .tint(brand.accent)
@@ -36,9 +36,10 @@ public struct BughouseRootView: View {
 
     @ViewBuilder private func gameView(_ l: Launch) -> some View {
         switch l {
-        case .fresh(let seats):
+        case .fresh(let seats, let base, let inc):
             BughouseGameView(brand: brand, appearance: appearance,
-                             controller: BughouseController(seats: seats, store: store), onExit: { launch = nil })
+                             controller: BughouseController(seats: seats, store: store, baseTime: base, increment: inc),
+                             onExit: { launch = nil })
         case .restore(let save):
             BughouseGameView(brand: brand, appearance: appearance,
                              controller: BughouseController(seats: [:], store: store, restore: save), onExit: { launch = nil })
@@ -51,7 +52,7 @@ struct BughouseMenuView: View {
     let brand: Brand
     @ObservedObject var store: BughouseStore
     @ObservedObject var appearance: Appearance
-    let onNew: ([BughouseSeat: SeatPlayer]) -> Void
+    let onNew: ([BughouseSeat: SeatPlayer], Double, Double) -> Void
     let onResume: (BughouseSave) -> Void
 
     @State private var showSetup = false
@@ -83,7 +84,6 @@ struct BughouseMenuView: View {
                     }
                     btn("New Match", "plus.circle.fill", prominent: store.autosave == nil) { showSetup = true }
                     if !store.slots.isEmpty { btn("Load Match", "tray.full.fill") { showLoad = true } }
-                    btn("More Chess Games", "square.grid.2x2.fill") { showMore = true }
                     btn("How to Play", "book.fill") { showRules = true }
                     btn("Appearance", "paintpalette.fill") { showAppearance = true }
                     HStack(spacing: 12) {
@@ -95,6 +95,7 @@ struct BughouseMenuView: View {
                         compact("Rate", "star.fill") { requestReview() }
                         compact("About", "info.circle.fill") { showAbout = true }
                     }
+                    btn("More Chess Games", "square.grid.2x2.fill") { showMore = true }   // always last
                 }.frame(maxWidth: 420)
                 Spacer()
                 Text("4-player · Offline · Kinsman Software LLC\n\(MainMenuView.appVersion)")
@@ -106,7 +107,7 @@ struct BughouseMenuView: View {
             if launchCount >= 10 && !didPromptReview { didPromptReview = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { requestReview() } }
         }
-        .sheet(isPresented: $showSetup) { BughouseSetupView(brand: brand) { showSetup = false; onNew($0) } }
+        .sheet(isPresented: $showSetup) { BughouseSetupView(brand: brand) { s, base, inc in showSetup = false; onNew(s, base, inc) } }
         .sheet(isPresented: $showLoad) { BughouseLoadView(brand: brand, store: store) { onResume($0) } }
         .sheet(isPresented: $showMore) { MoreGamesView(currentAppStoreID: brand.appStoreID, brand: brand) }
         .sheet(isPresented: $showRules) { BughouseRulesView(brand: brand) }
@@ -224,11 +225,18 @@ struct BughouseAppearanceView: View {
 /// Seat setup with quick presets + per-seat control.
 public struct BughouseSetupView: View {
     let brand: Brand
-    let onStart: ([BughouseSeat: SeatPlayer]) -> Void
+    let onStart: ([BughouseSeat: SeatPlayer], Double, Double) -> Void
     @State private var human: [Bool] = [true, false, false, false]
     @State private var level = 4
+    @State private var timeControl = 2   // index into timeControls
 
-    public init(brand: Brand, onStart: @escaping ([BughouseSeat: SeatPlayer]) -> Void) {
+    // Traditional bughouse time controls (base seconds, increment seconds).
+    private let timeControls: [(label: String, base: Double, inc: Double)] = [
+        ("1|0 — bullet", 60, 0), ("2|0 — classic bug", 120, 0),
+        ("3|2", 180, 2), ("5|0", 300, 0), ("10|0 — relaxed", 600, 0),
+    ]
+
+    public init(brand: Brand, onStart: @escaping ([BughouseSeat: SeatPlayer], Double, Double) -> Void) {
         self.brand = brand; self.onStart = onStart
     }
 
@@ -249,6 +257,14 @@ public struct BughouseSetupView: View {
                     }.padding(.horizontal)
                     teamCard("Team A", seats: [.b1White, .b2Black])
                     teamCard("Team B", seats: [.b1Black, .b2White])
+                    VStack(alignment: .leading) {
+                        Text("Clock").font(.headline)
+                        Picker("Time", selection: $timeControl) {
+                            ForEach(timeControls.indices, id: \.self) { Text(timeControls[$0].label).tag($0) }
+                        }.pickerStyle(.menu)
+                        Text("Each player has their own clock — you can stall on your time waiting for your partner to send a piece. Run out and your team loses.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }.padding(.horizontal)
                     if human.contains(false) {
                         VStack(alignment: .leading) {
                             Text("Computer strength").font(.headline)
@@ -256,7 +272,7 @@ public struct BughouseSetupView: View {
                             Text(Difficulty(level: level).blurb).font(.caption).foregroundStyle(.secondary)
                         }.padding(.horizontal)
                     }
-                    Button { onStart(buildSeats()) } label: {
+                    Button { let tc = timeControls[timeControl]; onStart(buildSeats(), tc.base, tc.inc) } label: {
                         Text("Start Match").font(.headline).frame(maxWidth: .infinity).padding(.vertical, 12)
                     }.buttonStyle(.borderedProminent).padding(.horizontal)
                 }.padding(.vertical)
@@ -303,7 +319,7 @@ public struct BughouseGameView: View {
     @State private var showChat = false
     @AppStorage("bug.board1Theme") private var board1Theme = "brown"
     @AppStorage("bug.board2Theme") private var board2Theme = "green"
-    private let overhead: CGFloat = 92
+    private let overhead: CGFloat = 132   // two reserves + two clock rows + turn line
 
     public init(brand: Brand, appearance: Appearance = .shared,
                 controller: BughouseController, onExit: @escaping () -> Void) {
@@ -380,6 +396,8 @@ public struct BughouseGameView: View {
     private func boardColumn(_ b: Int, size: CGFloat) -> some View {
         let bd = game.boards[b]
         return VStack(spacing: 3) {
+            HStack { Text("Board \(b + 1)").font(.caption2.weight(.bold)).foregroundStyle(.secondary); Spacer(); clockLabel(b, .black) }
+                .frame(width: size)
             pocket(b, color: .black, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == .black)
             BoardView(position: bd.pos, lastMove: bd.lastMove, selected: bd.selected, targets: bd.targets,
                       checkSquare: checkSquare(bd.pos), size: size, boardTheme: theme(b), appearance: appearance,
@@ -387,8 +405,22 @@ public struct BughouseGameView: View {
                       onMove: { f, t in game.move(board: b, from: f, to: t) },
                       onDropPiece: { k, sq in game.dropPiece(board: b, k, to: sq) })
             pocket(b, color: .white, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == .white)
-            turnPill(b)
+            HStack { turnPill(b); Spacer(); clockLabel(b, .white) }.frame(width: size)
         }.frame(width: size)
+    }
+
+    private func clockLabel(_ b: Int, _ color: PieceColor) -> some View {
+        let active = !game.status.isOver && game.boards[b].pos.sideToMove == color
+        let seat = game.seat(board: b, color: color)
+        let low = game.clock[seat.rawValue] <= 15
+        return HStack(spacing: 3) {
+            Circle().fill(color == .white ? Color.white : Color.black)
+                .frame(width: 8, height: 8).overlay(Circle().strokeBorder(.gray, lineWidth: 0.5))
+            Text(game.clockText(seat: seat)).font(.callout.weight(.bold).monospacedDigit())
+        }
+        .foregroundStyle(low && active ? .red : (active ? .white : .primary))
+        .padding(.horizontal, 8).padding(.vertical, 2)
+        .background(active ? AnyShapeStyle(low ? AnyShapeStyle(.red) : AnyShapeStyle(brand.accent)) : AnyShapeStyle(Color.primary.opacity(0.08)), in: Capsule())
     }
 
     private func pocket(_ b: Int, color: PieceColor, size: CGFloat, interactive: Bool) -> some View {
