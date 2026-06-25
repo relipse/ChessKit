@@ -205,6 +205,9 @@ public struct BughouseGameView: View {
     let onExit: () -> Void
     @State private var showSave = false
     @State private var saveName = ""
+    @State private var focusMine = false
+
+    private let overhead: CGFloat = 92   // two compact reserves + turn line
 
     public init(brand: Brand, appearance: Appearance = .shared,
                 controller: BughouseController, onExit: @escaping () -> Void) {
@@ -215,18 +218,15 @@ public struct BughouseGameView: View {
     public var body: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
-            let size = landscape ? min((geo.size.width - 40) / 2, geo.size.height - 150)
-                                  : min(geo.size.width - 24, (geo.size.height - 200) / 2)
-            VStack(spacing: 8) {
+            let cmdH: CGFloat = game.hasHuman ? 60 : 0
+            let availH = geo.size.height - cmdH - (game.status.isOver ? 40 : 0) - 4
+            VStack(spacing: 4) {
                 header
                 if game.status.isOver { overBanner }
-                if landscape {
-                    HStack(alignment: .top, spacing: 16) { boardColumn(0, size: size); boardColumn(1, size: size) }
-                } else {
-                    ScrollView { VStack(spacing: 14) { boardColumn(0, size: size); boardColumn(1, size: size) } }
-                }
+                boards(landscape: landscape, width: geo.size.width, availH: availH)
                 Spacer(minLength: 0)
-            }.padding(.horizontal, 12).frame(maxWidth: .infinity)
+                if game.hasHuman { commandBar }
+            }.padding(.horizontal, 10).frame(maxWidth: .infinity)
         }
         .alert("Save Match", isPresented: $showSave) {
             TextField("Name", text: $saveName)
@@ -235,27 +235,53 @@ public struct BughouseGameView: View {
         }
     }
 
+    @ViewBuilder
+    private func boards(landscape: Bool, width: CGFloat, availH: CGFloat) -> some View {
+        if landscape {
+            if focusMine && game.hasHuman {
+                let my = game.myBoard
+                let big = min(width * 0.58, availH - overhead)
+                let small = min(width * 0.34, availH - overhead)
+                HStack(alignment: .center, spacing: 14) {
+                    boardColumn(my, size: big)
+                    boardColumn(1 - my, size: small)
+                }.frame(maxWidth: .infinity)
+            } else {
+                let side = min((width - 28) / 2, availH - overhead)
+                HStack(alignment: .center, spacing: 14) { boardColumn(0, size: side); boardColumn(1, size: side) }
+                    .frame(maxWidth: .infinity)
+            }
+        } else {
+            let side = min(width - 16, (availH - overhead * 2) / 2)
+            ScrollView { VStack(spacing: 10) { boardColumn(0, size: side); boardColumn(1, size: side) } }
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
             Button { onExit() } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
             Text("Bughouse").font(.title3.weight(.bold).width(.condensed))
             Spacer()
+            if game.hasHuman {
+                Button { focusMine.toggle() } label: {
+                    Image(systemName: focusMine ? "rectangle.split.2x1" : "rectangle.split.2x1.fill").font(.title3)
+                }
+            }
             Button { saveName = "Bughouse · \(game.moveLog.count) moves"; showSave = true } label: {
                 Image(systemName: "square.and.arrow.down").font(.title3)
             }.disabled(game.moveLog.isEmpty)
             Button { game.newGame() } label: { Image(systemName: "arrow.counterclockwise").font(.title3) }
-        }.padding(.top, 6)
+        }.padding(.top, 4)
     }
 
     private var overBanner: some View {
-        Text(game.resultText).font(.headline).padding(8).frame(maxWidth: .infinity)
+        Text(game.resultText).font(.headline).padding(6).frame(maxWidth: .infinity)
             .background(brand.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func boardColumn(_ b: Int, size: CGFloat) -> some View {
         let bd = game.boards[b]
-        return VStack(spacing: 4) {
-            Text("Board \(b + 1)").font(.caption.weight(.bold))
+        return VStack(spacing: 3) {
             pocket(b, color: .black, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == .black)
             BoardView(position: bd.pos, lastMove: bd.lastMove, selected: bd.selected, targets: bd.targets,
                       checkSquare: checkSquare(bd.pos), size: size, appearance: appearance,
@@ -264,13 +290,13 @@ public struct BughouseGameView: View {
                       onDropPiece: { k, sq in game.dropPiece(board: b, k, to: sq) })
             pocket(b, color: .white, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == .white)
             turnPill(b)
-        }
+        }.frame(width: size)
     }
 
     private func pocket(_ b: Int, color: PieceColor, size: CGFloat, interactive: Bool) -> some View {
         PocketView(pocket: game.boards[b].pos.pockets[color] ?? Pocket(), color: color,
                    selected: color == game.boards[b].pos.sideToMove ? game.boards[b].pocketSel : nil,
-                   interactive: interactive, accent: brand.accent, appearance: appearance,
+                   interactive: interactive, accent: brand.accent, compact: true, appearance: appearance,
                    onSelect: { game.selectPocket(board: b, $0) })
             .frame(width: size)
     }
@@ -278,11 +304,41 @@ public struct BughouseGameView: View {
     private func turnPill(_ b: Int) -> some View {
         let toMove = game.boards[b].pos.sideToMove
         return HStack(spacing: 4) {
+            Text("B\(b + 1)").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
             if game.thinking[b] { ProgressView().scaleEffect(0.6) }
             Text(game.isHumanToMove(b) ? "\(toMove == .white ? "White" : "Black") — your move"
                                        : "\(toMove == .white ? "White" : "Black")…")
                 .font(.caption2).foregroundStyle(game.isHumanToMove(b) ? brand.accent : .secondary)
-        }.frame(height: 18)
+        }.frame(height: 16)
+    }
+
+    // MARK: Partner command bar
+
+    private var commandBar: some View {
+        VStack(spacing: 2) {
+            if let last = game.chat.last {
+                Text(last).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach([PieceKind.pawn, .knight, .bishop, .rook, .queen], id: \.self) { k in
+                        cmdButton(.need(k))
+                    }
+                    Divider().frame(height: 22)
+                    cmdButton(.sit); cmdButton(.go); cmdButton(.mate)
+                }.padding(.horizontal, 2)
+            }
+        }
+        .frame(height: 54)
+    }
+
+    private func cmdButton(_ cmd: BughouseController.PartnerCommand) -> some View {
+        Button { game.sendCommand(cmd) } label: {
+            Text(cmd.label).font(.caption.weight(.bold))
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(brand.accent.opacity(0.15), in: Capsule())
+                .foregroundStyle(brand.accent)
+        }.buttonStyle(.plain)
     }
 
     private func checkSquare(_ pos: Position) -> Int? {

@@ -86,6 +86,24 @@ public final class BughouseController: ObservableObject {
     @Published public private(set) var status: BughouseStatus = .ongoing
     @Published public private(set) var thinking: [Bool] = [false, false]
     @Published public private(set) var moveLog: [BughouseLogEntry] = []
+    /// Recent partner chat ("You: +N", "Partner: sit", …) for the comms log.
+    @Published public private(set) var chat: [String] = []
+    /// Standing instruction a computer partner is following, keyed by seat.
+    private var botRequest: [BughouseSeat: PartnerCommand] = [:]
+
+    /// Bughouse comms — quick things you tell your partner.
+    public enum PartnerCommand: Equatable, Sendable {
+        case need(PieceKind)   // "+N" — send me this piece
+        case sit               // stop trading / slow down
+        case go                // trade & attack, feed me pieces
+        case mate              // I'm going for mate
+        public var label: String {
+            switch self {
+            case .need(let k): return "+\(String(k.rawValue))"
+            case .sit: return "Sit"; case .go: return "Go"; case .mate: return "Mate!"
+            }
+        }
+    }
 
     public let seats: [BughouseSeat: SeatPlayer]
     public let store: BughouseStore?
@@ -286,15 +304,73 @@ public final class BughouseController: ObservableObject {
         thinking[b] = true
         aiTasks[b]?.cancel()
         let snapshot = boards[b].pos
+        let req = botRequest[seat(board: b, color: snapshot.sideToMove)]
         let engine = SearchEngine(variant: rules, difficulty: diff)
+        let rules = self.rules
         aiTasks[b] = Task { [weak self] in
-            async let best: Move? = Task.detached(priority: .userInitiated) { engine.bestMove(in: snapshot) }.value
+            async let best: Move? = Task.detached(priority: .userInitiated) {
+                BughouseController.pickMove(rules: rules, engine: engine, pos: snapshot, request: req)
+            }.value
             try? await Task.sleep(nanoseconds: 450_000_000)
             guard let self else { return }
             guard self.boards[b].pos == snapshot, !self.status.isOver else { self.thinking[b] = false; return }
             self.thinking[b] = false
             if let m = await best { self.apply(b, m) }
         }
+    }
+
+    /// Choose a bot move, biased by any standing partner command (kept light & fun, not optimal).
+    nonisolated private static func pickMove(rules: CrazyhouseChess, engine: SearchEngine,
+                                             pos: Position, request: PartnerCommand?) -> Move? {
+        let legal = rules.legalMoves(pos)
+        guard !legal.isEmpty else { return nil }
+        func isCap(_ m: Move) -> Bool { !m.isDrop && pos.squares[m.to] != nil }
+        func bestOf(_ subset: [Move]) -> Move? {
+            let perspective = pos.sideToMove == .white ? 1 : -1
+            return subset.max { a, b in
+                perspective * rules.evaluate(rules.make(a, in: pos)) < perspective * rules.evaluate(rules.make(b, in: pos))
+            }
+        }
+        switch request {
+        case .need(let kind):
+            // Try to capture that piece (to pass it to the partner) — pick the safest such capture.
+            let caps = legal.filter { !$0.isDrop && pos.squares[$0.to]?.kind == kind }
+            if let m = bestOf(caps) { return m }
+        case .go:
+            let caps = legal.filter(isCap)
+            if let m = bestOf(caps), !caps.isEmpty { return m }
+        case .sit:
+            // Avoid feeding the opponent: prefer a strong quiet move.
+            let quiet = legal.filter { !isCap($0) }
+            if let m = bestOf(quiet), !quiet.isEmpty { return m }
+        case .mate, .none:
+            break
+        }
+        return engine.bestMove(in: pos)
+    }
+
+    // MARK: Partner comms
+
+    public func partner(of seat: BughouseSeat) -> BughouseSeat {
+        switch seat {
+        case .b1White: return .b2Black; case .b2Black: return .b1White
+        case .b1Black: return .b2White; case .b2White: return .b1Black
+        }
+    }
+    /// The human "driving" — first human seat (used to aim comms and focus the layout).
+    public var primaryHumanSeat: BughouseSeat? {
+        BughouseSeat.allCases.first { seats[$0] == .human }
+    }
+    public var myBoard: Int { primaryHumanSeat?.board ?? 0 }
+    public var hasHuman: Bool { primaryHumanSeat != nil }
+
+    /// Send a quick command to your partner; if the partner is a computer it adjusts their play.
+    public func sendCommand(_ cmd: PartnerCommand) {
+        guard let me = primaryHumanSeat else { return }
+        let mate = partner(of: me)
+        chat.append("You: \(cmd.label)")
+        if chat.count > 12 { chat.removeFirst(chat.count - 12) }
+        if case .computer = seats[mate] { botRequest[mate] = cmd }
     }
 
     public var resultText: String {
