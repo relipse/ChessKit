@@ -413,38 +413,57 @@ public struct BughouseGameView: View {
     // MARK: Public chat / phrases
 
     private var commandBar: some View {
-        HStack(spacing: 8) {
-            Menu {
-                ForEach(BughouseController.phrases) { p in Button(p.text) { game.say(p) } }
-            } label: {
-                Label("Talk", systemImage: "bubble.left.fill").font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(brand.accent.opacity(0.15), in: Capsule()).foregroundStyle(brand.accent)
+        VStack(spacing: 2) {
+            if let last = game.chat.last {
+                Text(last).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Text(game.chat.last ?? "Tap Talk to call out to your partner")
-                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            Spacer(minLength: 0)
-        }.frame(height: 50)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 5) {
+                    ForEach(BughouseController.phrases) { p in chip(p) }
+                }.padding(.horizontal, 2)
+            }
+        }.frame(height: 52)
     }
 
+    private func chip(_ p: BughouseController.Phrase) -> some View {
+        Button { game.say(p) } label: {
+            Text(p.text).font(.caption.weight(.bold).monospaced())
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(brand.accent.opacity(0.15), in: Capsule()).foregroundStyle(brand.accent)
+        }.buttonStyle(.plain)
+    }
+
+    /// Table-talk sheet: FICS-style shorthand grid + the public message log.
     private var chatLog: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 5) {
                         ForEach(Array(game.chat.enumerated()), id: \.offset) { _, line in
-                            Text(line).font(.callout).frame(maxWidth: .infinity, alignment: .leading)
+                            Text(line).font(.callout.monospaced()).frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        if game.chat.isEmpty { Text("All table talk shows up here — everyone sees it.").foregroundStyle(.secondary) }
+                        if game.chat.isEmpty {
+                            Text("Table talk is public — everyone at both boards sees it.").foregroundStyle(.secondary)
+                        }
                     }.padding()
                 }
-                Menu {
-                    ForEach(BughouseController.phrases) { p in Button(p.text) { game.say(p) } }
-                } label: {
-                    Label("Say something…", systemImage: "bubble.left.fill").font(.headline)
-                        .frame(maxWidth: .infinity).padding(.vertical, 12)
-                        .background(brand.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
-                }.padding()
+                Divider()
+                ScrollView {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 6)], spacing: 6) {
+                        ForEach(BughouseController.phrases) { p in
+                            Button { game.say(p) } label: {
+                                VStack(spacing: 1) {
+                                    Text(p.text).font(.caption.weight(.bold).monospaced())
+                                    Text(p.hint).font(.system(size: 8)).foregroundStyle(.secondary).lineLimit(1)
+                                }
+                                .frame(maxWidth: .infinity).padding(.vertical, 6)
+                                .background(brand.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 8))
+                                .foregroundStyle(brand.accent)
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding()
+                }.frame(maxHeight: 280)
             }
             .navigationTitle("Table Talk")
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { showChat = false } } }
@@ -465,7 +484,7 @@ enum DemoBughouse {
         func m(_ b: Int, _ a: String, _ c: String) { g.move(board: b, from: a.sq, to: c.sq) }
         m(0,"e2","e4"); m(0,"d7","d5"); m(0,"e4","d5"); m(0,"g8","f6"); m(0,"b1","c3"); m(0,"b8","c6")
         m(1,"e2","e4"); m(1,"e7","e5"); m(1,"g1","f3"); m(1,"b8","c6"); m(1,"f1","b5")
-        g.say(BughouseController.phrases[1])   // "Send me a knight!"
+        g.say(BughouseController.phrases[10])   // "+N" (send me a knight)
         return g
     }
 }

@@ -365,28 +365,39 @@ public final class BughouseController: ObservableObject {
     public var hasHuman: Bool { primaryHumanSeat != nil }
 
     /// A predefined bughouse phrase — public chat, optionally nudging a computer partner.
+    /// `text` is the shorthand shown on the button & in the log; `hint` is the plain meaning.
     public struct Phrase: Identifiable, Sendable {
         public let id: Int
-        public let text: String
+        public let text: String     // shorthand, e.g. "+N", "Sit"
+        public let hint: String     // meaning, e.g. "send me a knight"
         let bias: PartnerCommand?
+        init(_ id: Int, _ text: String, _ hint: String, _ bias: PartnerCommand? = nil) {
+            self.id = id; self.text = text; self.hint = hint; self.bias = bias
+        }
     }
 
-    /// The bughouse-lingo quick phrases everyone can say.
+    /// Standard FICS-style bughouse shorthand (clean subset) everyone can say.
     public static let phrases: [Phrase] = [
-        .init(id: 0, text: "Send me a pawn!",   bias: .need(.pawn)),
-        .init(id: 1, text: "Send me a knight!", bias: .need(.knight)),
-        .init(id: 2, text: "Send me a bishop!", bias: .need(.bishop)),
-        .init(id: 3, text: "Send me a rook!",   bias: .need(.rook)),
-        .init(id: 4, text: "Send me a queen!",  bias: .need(.queen)),
-        .init(id: 5, text: "Sit! Don't trade.", bias: .sit),
-        .init(id: 6, text: "Go! Feed me pieces.", bias: .go),
-        .init(id: 7, text: "Trade everything!", bias: .go),
-        .init(id: 8, text: "Hold — I'm getting mated!", bias: .sit),
-        .init(id: 9, text: "Mate coming — stall!", bias: .sit),
-        .init(id: 10, text: "Need a piece for mate!", bias: nil),
-        .init(id: 11, text: "Watch the back rank!", bias: nil),
-        .init(id: 12, text: "Nice!", bias: nil),
-        .init(id: 13, text: "Hurry!", bias: nil),
+        .init(0,  "Sit",  "sit / don't trade", .sit),   .init(1,  "Go",   "trade & attack", .go),
+        .init(2,  "Fast", "play fast"),                  .init(3,  "Time", "low on time"),
+        .init(4,  "++",   "I'm winning"),                .init(5,  "--",   "I'm losing"),
+        .init(6,  "+Q",   "send me a queen", .need(.queen)),  .init(7,  "-Q",  "I'm giving up a queen"),
+        .init(8,  "+R",   "send me a rook", .need(.rook)),    .init(9,  "-R",  "I'm giving up a rook"),
+        .init(10, "+N",   "send me a knight", .need(.knight)),.init(11, "-N",  "I'm giving up a knight"),
+        .init(12, "+B",   "send me a bishop", .need(.bishop)),.init(13, "-B",  "I'm giving up a bishop"),
+        .init(14, "+P",   "send me a pawn", .need(.pawn)),    .init(15, "-P",  "I'm giving up a pawn"),
+        .init(16, "OK",   "okay"),                       .init(17, "OK now", "okay, now"),
+        .init(18, "Hard", "this is hard"),               .init(19, "Coming", "help is coming"),
+        .init(20, "Maybe","maybe"),                      .init(21, "I sit", "I'll sit", .sit),
+        .init(22, "Mates me", "they have mate on me"),   .init(23, "Mates him", "I have mate"),
+        .init(24, "I dead", "I'm lost"),                 .init(25, "Opp dead", "opponent is lost"),
+        .init(26, "Yes",  "yes"),                        .init(27, "No",   "no"),
+        .init(28, "Tell me go", "tell me when to go"),   .init(29, "Tell u go", "I'll tell you to go", .go),
+        .init(30, "Keep check", "keep them in check"),   .init(31, "Nevermind", "never mind"),
+        .init(32, "We up", "we're up material"),         .init(33, "We down", "we're down material"),
+        .init(34, "U get", "you take it"),               .init(35, "He gets", "let them take it"),
+        .init(36, "Watchout", "watch out!"),             .init(37, "Feed me", "send me pieces", .go),
+        .init(38, "Lag", "I'm lagging"),
     ]
 
     /// Say a phrase out loud (everyone sees it). If it carries a request and the speaker's
