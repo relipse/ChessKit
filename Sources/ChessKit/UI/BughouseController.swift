@@ -105,6 +105,9 @@ public final class BughouseController: ObservableObject {
     @Published public private(set) var chat: [String] = []
     /// Standing instruction a computer partner is following, keyed by seat.
     private var botRequest: [BughouseSeat: PartnerCommand] = [:]
+    /// Computer seats a human told to "Sit" — they hold their move (clock still runs) until released.
+    @Published public private(set) var sitting: Set<BughouseSeat> = []
+    public func isSitting(board b: Int) -> Bool { sitting.contains(seat(board: b, color: boards[b].pos.sideToMove)) }
 
     /// Bughouse comms — quick things you tell your partner.
     public enum PartnerCommand: Equatable, Sendable {
@@ -389,10 +392,12 @@ public final class BughouseController: ObservableObject {
     private func maybeStartAI(_ b: Int) {
         guard !status.isOver else { return }
         guard case .computer(let diff) = player(b, boards[b].pos.sideToMove) else { return }
+        let moverSeat = seat(board: b, color: boards[b].pos.sideToMove)
+        if sitting.contains(moverSeat) { thinking[b] = false; aiTasks[b]?.cancel(); return }   // told to sit — hold
         thinking[b] = true
         aiTasks[b]?.cancel()
         let snapshot = boards[b].pos
-        let req = botRequest[seat(board: b, color: snapshot.sideToMove)]
+        let req = botRequest[moverSeat]
         let engine = SearchEngine(variant: rules, difficulty: diff)
         let rules = self.rules
         let talkSeat = seat(board: b, color: snapshot.sideToMove)
@@ -521,7 +526,20 @@ public final class BughouseController: ObservableObject {
         if chat.count > 30 { chat.removeFirst(chat.count - 30) }
         if let bias = phrase.bias {
             let mate = partner(of: speaker)
-            if case .computer = seats[mate] { botRequest[mate] = bias }
+            if case .computer = seats[mate] {
+                let humanSpeaker = (seats[speaker] == .human)
+                if humanSpeaker && bias == .sit {
+                    // Hard "Sit": the computer partner holds its move until you release it.
+                    sitting.insert(mate)
+                    aiTasks[mate.board]?.cancel(); thinking[mate.board] = false
+                } else {
+                    botRequest[mate] = bias
+                    if humanSpeaker { sitting.remove(mate) }          // any other call releases the sit
+                    if !status.isOver && boards[mate.board].pos.sideToMove == mate.color {
+                        maybeStartAI(mate.board)                       // resume immediately if it's their turn
+                    }
+                }
+            }
         }
         net?.sendChat(line)   // table talk is public across all devices
     }

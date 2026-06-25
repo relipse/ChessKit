@@ -434,18 +434,35 @@ public struct BughouseGameView: View {
 
     private func boardColumn(_ b: Int, size: CGFloat) -> some View {
         let bd = game.boards[b]
+        // Mirror the two boards: Board 1 has White at the bottom, Board 2 has Black at the bottom.
+        // That puts each TEAM (partners, opposite colours) together along one edge — Team A across
+        // both bottoms, Team B across both tops — the standard bughouse layout.
+        let bottom: PieceColor = (b == 0) ? .white : .black
+        let top = bottom.opposite
         return VStack(spacing: 3) {
-            HStack { Text("Board \(b + 1)").font(.caption2.weight(.bold)).foregroundStyle(.secondary); Spacer(); clockLabel(b, .black) }
-                .frame(width: size)
-            pocket(b, color: .black, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == .black)
-            BoardView(position: bd.pos, lastMove: bd.lastMove, selected: bd.selected, targets: bd.targets,
+            HStack(spacing: 5) {
+                Text("Board \(b + 1)").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
+                teamBadge(b, top); Spacer(); clockLabel(b, top)
+            }.frame(width: size)
+            pocket(b, color: top, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == top)
+            BoardView(position: bd.pos, flipped: bottom == .black, lastMove: bd.lastMove,
+                      selected: bd.selected, targets: bd.targets,
                       checkSquare: checkSquare(bd.pos), size: size, boardTheme: theme(b), appearance: appearance,
                       onTap: { game.tap(board: b, $0) },
                       onMove: { f, t in game.move(board: b, from: f, to: t) },
                       onDropPiece: { k, sq in game.dropPiece(board: b, k, to: sq) })
-            pocket(b, color: .white, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == .white)
-            HStack { turnPill(b); Spacer(); clockLabel(b, .white) }.frame(width: size)
+            pocket(b, color: bottom, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == bottom)
+            HStack(spacing: 5) { turnPill(b); teamBadge(b, bottom); Spacer(); clockLabel(b, bottom) }.frame(width: size)
         }.frame(width: size)
+    }
+
+    /// A small "Team A/B" badge for a seat, so the opposite-colour pairing is obvious.
+    private func teamBadge(_ b: Int, _ color: PieceColor) -> some View {
+        let team = game.seat(board: b, color: color).team
+        return Text(team == 0 ? "Team A" : "Team B")
+            .font(.system(size: 9, weight: .heavy))
+            .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 1)
+            .background(team == 0 ? brand.accent : .gray, in: Capsule())
     }
 
     private func clockLabel(_ b: Int, _ color: PieceColor) -> some View {
@@ -472,37 +489,47 @@ public struct BughouseGameView: View {
 
     private func turnPill(_ b: Int) -> some View {
         let toMove = game.boards[b].pos.sideToMove
+        let sitting = game.isSitting(board: b)
         return HStack(spacing: 4) {
             Text("B\(b + 1)").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
             if game.thinking[b] { ProgressView().scaleEffect(0.6) }
-            Text(game.isHumanToMove(b) ? "\(toMove == .white ? "White" : "Black") — your move"
-                                       : "\(toMove == .white ? "White" : "Black")…")
-                .font(.caption2).foregroundStyle(game.isHumanToMove(b) ? brand.accent : .secondary)
+            Text(sitting ? "\(toMove == .white ? "White" : "Black") sitting 💤"
+                 : game.isHumanToMove(b) ? "\(toMove == .white ? "White" : "Black") — your move"
+                                         : "\(toMove == .white ? "White" : "Black")…")
+                .font(.caption2).foregroundStyle(sitting ? .orange : (game.isHumanToMove(b) ? brand.accent : .secondary))
         }.frame(height: 16)
     }
 
     // MARK: Public chat / phrases
 
-    private var commandBar: some View {
-        VStack(spacing: 2) {
-            if let last = game.chat.last {
-                Text(last).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 5) {
-                    ForEach(BughouseController.phrases) { p in chip(p) }
-                }.padding(.horizontal, 2)
-            }
-        }.frame(height: 52)
-    }
+    // Grouped so every phrase is reachable without horizontal scrolling / clipping.
+    private static let phraseGroups: [(String, [Int])] = [
+        ("Ask for a piece", [6, 8, 10, 12, 14]),
+        ("Tempo", [0, 1, 37, 30, 2, 3]),
+        ("Status", [22, 23, 4, 5, 24, 25, 32, 33, 36, 38]),
+        ("Reply", [16, 17, 26, 27, 18, 19, 20, 21, 28, 29, 31, 34, 35]),
+        ("Giving up a piece", [7, 9, 11, 13, 15]),
+    ]
 
-    private func chip(_ p: BughouseController.Phrase) -> some View {
-        Button { game.say(p) } label: {
-            Text(p.text).font(.caption.weight(.bold).monospaced())
-                .padding(.horizontal, 10).padding(.vertical, 7)
-                .background(brand.accent.opacity(0.15), in: Capsule()).foregroundStyle(brand.accent)
-        }.buttonStyle(.plain)
+    private var commandBar: some View {
+        HStack(spacing: 10) {
+            Menu {
+                ForEach(Self.phraseGroups, id: \.0) { group in
+                    Section(group.0) {
+                        ForEach(BughouseController.phrases.filter { group.1.contains($0.id) }) { p in
+                            Button("\(p.text) — \(p.hint)") { game.say(p) }
+                        }
+                    }
+                }
+            } label: {
+                Label("Talk to Partner", systemImage: "bubble.left.fill").font(.subheadline.weight(.semibold))
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(brand.accent.opacity(0.15), in: Capsule()).foregroundStyle(brand.accent)
+            }
+            Text(game.chat.last ?? "Call out to your partner — bughouse shorthand")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 0)
+        }.frame(height: 50)
     }
 
     /// Table-talk sheet: FICS-style shorthand grid + the public message log.

@@ -34,6 +34,8 @@ public final class BughouseNearbyService: NSObject, ObservableObject, BughouseNe
     public var hostPlan: [SeatPlayer?] = [.human, nil, nil, .computer(.medium)]
     public var baseTime: Double = 180
     public var increment: Double = 2
+    /// Strength used for any open seat no nearby player claimed.
+    public var fallbackDifficulty: Difficulty = .medium
 
     private let serviceType = "kcbughouse"
     private let myPeerID: MCPeerID
@@ -73,16 +75,29 @@ public final class BughouseNearbyService: NSObject, ObservableObject, BughouseNe
 
     /// Begin the match (host). Builds the authoritative controller and tells every joiner.
     public func beginMatch(store: BughouseStore?) {
+        let claimed = Set(peerSeat.values)
         var seats: [BughouseSeat: SeatPlayer] = [:]
-        for s in BughouseSeat.allCases { seats[s] = hostPlan[s.rawValue] ?? .human }   // open → human (remote)
+        for s in BughouseSeat.allCases {
+            switch hostPlan[s.rawValue] {
+            case .human: seats[s] = .human                                   // the host's own seat
+            case .computer(let d): seats[s] = .computer(d)                   // host configured a bot
+            case .none:  seats[s] = claimed.contains(s) ? .human            // a nearby player took it
+                                                        : .computer(fallbackDifficulty)  // nobody came → bot
+            }
+        }
         let c = BughouseController(seats: seats, store: store, baseTime: baseTime, increment: increment)
         c.role = .host
         c.localSeats = Set(BughouseSeat.allCases.filter { hostPlan[$0.rawValue] == .human })
         c.net = self
         controller = c
         phase = .playing
-        broadcast(BugPacket(kind: .sync, seatLevels: seatLevels(), baseTime: baseTime,
+        broadcast(BugPacket(kind: .sync, seatLevels: levels(of: seats), baseTime: baseTime,
                             increment: increment, moveLog: c.moveLog, clocks: c.clock))
+    }
+
+    /// Per-seat wire levels from a resolved seat map (-1 human, 1…10 bot).
+    private func levels(of seats: [BughouseSeat: SeatPlayer]) -> [Int] {
+        BughouseSeat.allCases.map { if case .computer(let d) = seats[$0] { return max(1, min(10, d.level)) } else { return -1 } }
     }
 
     // MARK: Client
@@ -267,7 +282,7 @@ struct BughouseNearbyLobby: View {
             }
             Section("Clock") {
                 Picker("Time", selection: $tc) { ForEach(tcs.indices, id: \.self) { Text(tcs[$0].0).tag($0) } }
-                if plan.contains(1) {
+                if plan.contains(1) || plan.contains(2) {
                     Picker("Computer level", selection: $level) { ForEach(1...10, id: \.self) { Text("\($0)").tag($0) } }
                 }
             }
@@ -277,10 +292,11 @@ struct BughouseNearbyLobby: View {
                         switch plan[s.rawValue] { case 0: return .human; case 1: return .computer(Difficulty(level: level)); default: return nil }
                     }
                     service.baseTime = tcs[tc].1; service.increment = tcs[tc].2
+                    service.fallbackDifficulty = Difficulty(level: level)
                     service.startHosting()
                 } label: { Label("Host Game", systemImage: "wifi").frame(maxWidth: .infinity) }
                 .buttonStyle(.borderedProminent)
-                Text("Set at least one seat to “Nearby player”, then friends on the same Wi-Fi can join.").font(.caption).foregroundStyle(.secondary)
+                Text("Set seats to “Nearby player” so friends on the same Wi-Fi can join. Any nearby seat nobody claims is played by the computer.").font(.caption).foregroundStyle(.secondary)
             }
         }
     }
