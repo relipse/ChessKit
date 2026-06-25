@@ -19,7 +19,7 @@ public enum ChessAppCatalog {
 
     public static let apps: [ChessAppEntry] = [
         ChessAppEntry(id: "6784078356", title: "Kriegspiel Chess",
-                      blurb: "Blind chess — you see only your own pieces.",
+                      blurb: "Fog of war — you see only your own pieces.",
                       systemImage: "eye.slash.fill", accent: Color(red: 0.149, green: 0.196, blue: 0.376)),
         ChessAppEntry(id: "6784077125", title: "Crazyhouse Chess",
                       blurb: "Capture pieces and drop them back into play.",

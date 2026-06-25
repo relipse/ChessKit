@@ -224,8 +224,8 @@ final class ChessKitTests: XCTestCase {
     func testPawnDuelStartAndPlay() {
         let v = PawnDuelChess()
         let pos = v.startPosition()
-        XCTAssertEqual(pos.squares["a8".squareIndex!]?.kind, .king)
-        XCTAssertEqual(pos.squares["h1".squareIndex!]?.kind, .king)
+        XCTAssertEqual(pos.squares["b8".squareIndex!]?.kind, .king)
+        XCTAssertEqual(pos.squares["g1".squareIndex!]?.kind, .king)
         XCTAssertEqual(pos.squares.compactMap { $0 }.filter { $0.kind == .pawn }.count, 6)
         XCTAssertFalse(v.legalMoves(pos).isEmpty)
     }

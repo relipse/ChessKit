@@ -10,8 +10,10 @@ public struct PawnDuelChess: ChessVariant {
         "A king and three pawns in opposite corners — promote a pawn and checkmate to win."
     }
 
-    /// Black king + a7/b7/c7 pawns (top-left) vs White king + f2/g2/h2 pawns (bottom-right).
-    public static let startFEN = "k7/ppp5/8/8/8/8/5PPP/7K w - - 0 1"
+    /// Black king b8 + a7/b7/c7 pawns vs White king g1 + f2/g2/h2 pawns.
+    /// The kings sit one square in from the corner so each can just catch the
+    /// farthest enemy pawn (reaching the promotion square in time to take the queen).
+    public static let startFEN = "1k6/ppp5/8/8/8/8/5PPP/6K1 w - - 0 1"
 
     public func startPosition() -> Position { Position(fen: PawnDuelChess.startFEN)! }
     public func legalMoves(_ pos: Position) -> [Move] { StandardChess.legalStandardMoves(pos) }
