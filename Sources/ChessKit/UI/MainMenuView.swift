@@ -70,6 +70,7 @@ public struct MainMenuView: View {
     @State private var showAppearance = false
     @State private var showHistory = false
     @State private var showAbout = false
+    @State private var showMore = false
     @Environment(\.requestReview) private var requestReview
     @AppStorage("ck.launchCount") private var launchCount = 0
     @AppStorage("ck.didPromptReview") private var didPromptReview = false
@@ -100,6 +101,7 @@ public struct MainMenuView: View {
                     menuButton("Leaderboard", systemImage: "trophy.fill") {
                         GameCenter.shared.showDashboard(leaderboardID: brand.leaderboardID)
                     }
+                    menuButton("More Chess Games", systemImage: "square.grid.2x2.fill") { showMore = true }
                     menuButton("How to Play", systemImage: "book.fill") { showRules = true }
                     menuButton("Appearance", systemImage: "paintpalette.fill") { showAppearance = true }
                     HStack(spacing: 12) {
@@ -141,6 +143,9 @@ public struct MainMenuView: View {
             GameHistoryListView(variant: variant, brand: brand, store: store, appearance: appearance)
         }
         .sheet(isPresented: $showAbout) { AboutView(brand: brand) }
+        .sheet(isPresented: $showMore) {
+            MoreGamesView(currentAppStoreID: brand.appStoreID, brand: brand)
+        }
     }
 
     private var hero: some View {

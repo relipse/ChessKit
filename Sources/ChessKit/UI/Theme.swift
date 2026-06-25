@@ -12,7 +12,7 @@ public struct Brand: Sendable {
     public var leaderboardID: String?
 
     public init(accent: Color, title: String, systemImage: String = "crown.fill",
-                appStoreID: String? = nil, leaderboardID: String? = nil) {
+                leaderboardID: String? = nil, appStoreID: String? = nil) {
         self.accent = accent
         self.title = title
         self.systemImage = systemImage
