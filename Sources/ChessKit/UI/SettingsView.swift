@@ -15,11 +15,8 @@ public struct SettingsView: View {
         NavigationStack {
             Form {
                 Section("Difficulty") {
-                    Picker("Computer strength", selection: Binding(
-                        get: { game.difficulty },
-                        set: { game.difficulty = $0 })) {
-                        ForEach(Difficulty.allCases) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented)
+                    DifficultyPicker(difficulty: Binding(
+                        get: { game.difficulty }, set: { game.difficulty = $0 }))
                     Text("Takes effect on your next New Game.").font(.caption).foregroundStyle(.secondary)
                 }
                 AppearanceSections(brand: brand, appearance: appearance)
@@ -28,6 +25,19 @@ public struct SettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .tint(brand.accent)
+    }
+}
+
+/// A 1–10 difficulty level picker that shows what changes at the chosen level.
+public struct DifficultyPicker: View {
+    @Binding var difficulty: Difficulty
+    public init(difficulty: Binding<Difficulty>) { self._difficulty = difficulty }
+    public var body: some View {
+        Picker("Level", selection: Binding(
+            get: { difficulty.level }, set: { difficulty = Difficulty(level: $0) })) {
+            ForEach(1...10, id: \.self) { Text("Level \($0)").tag($0) }
+        }
+        Text(difficulty.blurb).font(.caption).foregroundStyle(.secondary)
     }
 }
 
@@ -113,11 +123,7 @@ public struct NewGameSheet: View {
                         Text("Black").tag(PieceColor.black)
                     }.pickerStyle(.segmented)
                 }
-                Section("Difficulty") {
-                    Picker("Strength", selection: $difficulty) {
-                        ForEach(Difficulty.allCases) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented)
-                }
+                Section("Difficulty") { DifficultyPicker(difficulty: $difficulty) }
                 Section {
                     Button {
                         game.newGame(humanColor: color, difficulty: difficulty)

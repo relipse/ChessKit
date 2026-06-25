@@ -1,4 +1,5 @@
 import SwiftUI
+import StoreKit
 
 extension View {
     /// Present the game full-screen on iOS / Catalyst, as a sheet on plain macOS.
@@ -18,7 +19,7 @@ public enum GameLaunch: Identifiable {
     case restore(SavedGame)
     public var id: String {
         switch self {
-        case .fresh(let c, let d): return "fresh-\(c)-\(d.rawValue)"
+        case .fresh(let c, let d): return "fresh-\(c)-\(d.level)"
         case .restore(let g): return "restore-\(g.id)"
         }
     }
@@ -43,14 +44,16 @@ public struct ChessRootView: View {
     }
 
     public var body: some View {
-        MainMenuView(variant: variant, brand: brand, store: store, appearance: appearance,
-                     onLaunch: { launch = $0 })
+        SplashGate(brand: brand) {
+            MainMenuView(variant: variant, brand: brand, store: store, appearance: appearance,
+                         onLaunch: { launch = $0 })
             .gameCover(item: $launch) { l in
                 ChessGameView(variant: variant, brand: brand, appearance: appearance,
                               suite: suite, store: store, launch: l,
                               onExit: { launch = nil })
             }
             .tint(brand.accent)
+        }
     }
 }
 
@@ -65,6 +68,11 @@ public struct MainMenuView: View {
     @State private var showLoad = false
     @State private var showRules = false
     @State private var showAppearance = false
+    @State private var showHistory = false
+    @State private var showAbout = false
+    @Environment(\.requestReview) private var requestReview
+    @AppStorage("ck.launchCount") private var launchCount = 0
+    @AppStorage("ck.didPromptReview") private var didPromptReview = false
 
     public var body: some View {
         ZStack {
@@ -86,14 +94,34 @@ public struct MainMenuView: View {
                     if !store.slots.isEmpty {
                         menuButton("Load Game", systemImage: "tray.full.fill") { showLoad = true }
                     }
+                    if !store.history.isEmpty {
+                        menuButton("Game History", systemImage: "clock.arrow.circlepath") { showHistory = true }
+                    }
+                    menuButton("Leaderboard", systemImage: "trophy.fill") {
+                        GameCenter.shared.showDashboard(leaderboardID: brand.leaderboardID)
+                    }
                     menuButton("How to Play", systemImage: "book.fill") { showRules = true }
                     menuButton("Appearance", systemImage: "paintpalette.fill") { showAppearance = true }
+                    HStack(spacing: 12) {
+                        ShareLink(item: brand.appStoreURL, message: Text(brand.shareMessage)) {
+                            Label("Share", systemImage: "square.and.arrow.up")
+                                .font(.subheadline).frame(maxWidth: .infinity).padding(.vertical, 12)
+                                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                        }
+                        compactButton("Rate", systemImage: "star.fill") { requestReview() }
+                        compactButton("About", systemImage: "info.circle.fill") { showAbout = true }
+                    }
                 }
                 .frame(maxWidth: 420)
                 Spacer()
-                Text("vs Computer · Offline").font(.footnote).foregroundStyle(.secondary)
+                Text("vs Computer · Offline · Kinsman Software LLC")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             .padding(.horizontal, 24)
+        }
+        .onAppear {
+            trackLaunchAndMaybePrompt()
+            GameCenter.shared.authenticate()
         }
         .sheet(isPresented: $showNewGame) {
             NewGameOptionsView(variant: variant, brand: brand, appearance: appearance) { color, diff in
@@ -106,6 +134,10 @@ public struct MainMenuView: View {
         }
         .sheet(isPresented: $showRules) { RulesView(variant: variant, brand: brand) }
         .sheet(isPresented: $showAppearance) { AppearanceSettingsView(brand: brand, appearance: appearance) }
+        .sheet(isPresented: $showHistory) {
+            GameHistoryListView(variant: variant, brand: brand, store: store, appearance: appearance)
+        }
+        .sheet(isPresented: $showAbout) { AboutView(brand: brand) }
     }
 
     private var hero: some View {
@@ -121,6 +153,23 @@ public struct MainMenuView: View {
             Text(variant.blurb)
                 .font(.subheadline).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center).padding(.horizontal, 12)
+        }
+    }
+
+    /// Count launches; on the 10th, ask the system to show the rating prompt once.
+    private func trackLaunchAndMaybePrompt() {
+        launchCount += 1
+        if launchCount >= 10 && !didPromptReview {
+            didPromptReview = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { requestReview() }
+        }
+    }
+
+    private func compactButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .font(.subheadline).frame(maxWidth: .infinity).padding(.vertical, 12)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
         }
     }
 
@@ -158,11 +207,7 @@ struct NewGameOptionsView: View {
                         Text("Black").tag(PieceColor.black)
                     }.pickerStyle(.segmented)
                 }
-                Section("Difficulty") {
-                    Picker("Strength", selection: $difficulty) {
-                        ForEach(Difficulty.allCases) { Text($0.title).tag($0) }
-                    }.pickerStyle(.segmented)
-                }
+                Section("Difficulty") { DifficultyPicker(difficulty: $difficulty) }
                 Section {
                     Button { onStart(color, difficulty); dismiss() } label: {
                         Text("Start").frame(maxWidth: .infinity).font(.headline)

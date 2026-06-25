@@ -13,15 +13,17 @@ public struct SavedGame: Codable, Identifiable, Sendable {
     public var moves: [Move]
     public var humanColor: PieceColor
     public var difficulty: Difficulty
+    /// Final result text, set when a game is recorded into history ("" if still in progress).
+    public var result: String?
     /// Move count, for menu display ("12 moves").
     public var plyCount: Int { moves.count }
 
     public init(id: UUID = UUID(), name: String, date: Date, variantName: String,
                 startFEN: String, rookFiles: [String: Int], moves: [Move],
-                humanColor: PieceColor, difficulty: Difficulty) {
+                humanColor: PieceColor, difficulty: Difficulty, result: String? = nil) {
         self.id = id; self.name = name; self.date = date; self.variantName = variantName
         self.startFEN = startFEN; self.rookFiles = rookFiles; self.moves = moves
-        self.humanColor = humanColor; self.difficulty = difficulty
+        self.humanColor = humanColor; self.difficulty = difficulty; self.result = result
     }
 
     /// Rebuild the starting position (restoring Chess960 rook files).
@@ -40,8 +42,11 @@ public struct SavedGame: Codable, Identifiable, Sendable {
 public final class GameStore: ObservableObject {
     @Published public private(set) var autosave: SavedGame?
     @Published public private(set) var slots: [SavedGame] = []
+    /// Every game played (newest first), for replay. Capped to a sensible size.
+    @Published public private(set) var history: [SavedGame] = []
 
     private let fileURL: URL
+    private let historyCap = 250
 
     public init(filename: String = "chesskit_games.json") {
         let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
@@ -50,18 +55,34 @@ public final class GameStore: ObservableObject {
         load()
     }
 
-    private struct Disk: Codable { var autosave: SavedGame?; var slots: [SavedGame] }
+    private struct Disk: Codable { var autosave: SavedGame?; var slots: [SavedGame]; var history: [SavedGame]? }
 
     private func load() {
         guard let data = try? Data(contentsOf: fileURL),
               let disk = try? JSONDecoder().decode(Disk.self, from: data) else { return }
         autosave = disk.autosave
         slots = disk.slots
+        history = disk.history ?? []
     }
 
     private func persist() {
-        let disk = Disk(autosave: autosave, slots: slots)
+        let disk = Disk(autosave: autosave, slots: slots, history: history)
         if let data = try? JSONEncoder().encode(disk) { try? data.write(to: fileURL) }
+    }
+
+    /// Record a played game into the replayable history (replacing a same-id entry).
+    public func recordHistory(_ game: SavedGame) {
+        guard !game.moves.isEmpty else { return }
+        if let i = history.firstIndex(where: { $0.id == game.id }) { history[i] = game }
+        else { history.insert(game, at: 0) }
+        history.sort { $0.date > $1.date }
+        if history.count > historyCap { history.removeLast(history.count - historyCap) }
+        persist()
+    }
+
+    public func deleteHistory(_ game: SavedGame) {
+        history.removeAll { $0.id == game.id }
+        persist()
     }
 
     public func setAutosave(_ game: SavedGame?) { autosave = game; persist() }

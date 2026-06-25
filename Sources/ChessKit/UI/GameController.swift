@@ -16,7 +16,7 @@ public final class GameController: ObservableObject {
     // Player setup.
     @Published public var humanColor: PieceColor
     @Published public var difficulty: Difficulty {
-        didSet { defaults.set(difficulty.rawValue, forKey: "ck.difficulty") }
+        didSet { defaults.set(difficulty.level, forKey: "ck.difficultyLevel") }
     }
     public var flipped: Bool { humanColor == .black }
 
@@ -35,19 +35,26 @@ public final class GameController: ObservableObject {
     private var engine: SearchEngine
     /// The position the current game started from (needed to save/replay, esp. Chess960).
     public private(set) var initialPosition: Position
+    /// Stable id for the current game so history/slots update one entry, not duplicates.
+    private var gameID = UUID()
     /// Shared store for autosave + named slots (nil → no persistence).
     public let store: GameStore?
+    /// Game Center leaderboard to submit wins to.
+    public var leaderboardID: String?
 
     public init(variant: ChessVariant, humanColor: PieceColor = .white,
                 difficulty: Difficulty? = nil, suite: String? = nil,
-                store: GameStore? = nil, restore saved: SavedGame? = nil) {
+                store: GameStore? = nil, restore saved: SavedGame? = nil,
+                leaderboardID: String? = nil) {
         self.variant = variant
+        self.leaderboardID = leaderboardID
         let d = suite.flatMap { UserDefaults(suiteName: $0) } ?? .standard
         self.defaults = d
         self.store = store
+        let storedLevel = d.object(forKey: "ck.difficultyLevel") as? Int
         let diff = saved?.difficulty
             ?? difficulty
-            ?? Difficulty(rawValue: d.string(forKey: "ck.difficulty") ?? "")
+            ?? storedLevel.map(Difficulty.init(level:))
             ?? .medium
         self.difficulty = diff
         self.humanColor = saved?.humanColor ?? humanColor
@@ -55,7 +62,7 @@ public final class GameController: ObservableObject {
         self.initialPosition = start
         self.position = start
         self.engine = SearchEngine(variant: variant, difficulty: diff)
-        if let saved { replay(saved.moves) }
+        if let saved { gameID = saved.id; replay(saved.moves) }
     }
 
     /// Replay a move list from `initialPosition`, rebuilding all derived state.
@@ -85,6 +92,7 @@ public final class GameController: ObservableObject {
         if let c = humanColor { self.humanColor = c }
         if let d = difficulty { self.difficulty = d }
         engine = SearchEngine(variant: variant, difficulty: self.difficulty)
+        gameID = UUID()
         let start = variant.startPosition()
         initialPosition = start
         position = start
@@ -100,9 +108,16 @@ public final class GameController: ObservableObject {
     public func toSaved(name: String) -> SavedGame {
         var rookFiles: [String: Int] = [:]
         for (k, v) in initialPosition.castleRookFile { rookFiles[String(k)] = v }
-        return SavedGame(name: name, date: savedDate(), variantName: variant.name,
+        return SavedGame(id: gameID, name: name, date: savedDate(), variantName: variant.name,
                          startFEN: initialPosition.fen(), rookFiles: rookFiles,
-                         moves: history, humanColor: humanColor, difficulty: difficulty)
+                         moves: history, humanColor: humanColor, difficulty: difficulty,
+                         result: status.isOver ? resultText : nil)
+    }
+
+    /// Log the current game into the replayable history (call on game over or when leaving).
+    public func recordToHistory() {
+        guard !history.isEmpty else { return }
+        store?.recordHistory(toSaved(name: status.isOver ? resultText : defaultSaveName()))
     }
 
     /// Persist the current game to a named slot.
@@ -274,6 +289,13 @@ public final class GameController: ObservableObject {
         lastMove = move.isDrop ? nil : (move.from, move.to)
         status = variant.status(position)
         autosave()
+        if status.isOver {
+            recordToHistory()
+            if humanWon {
+                GameCenter.shared.submitWin(leaderboardID: leaderboardID,
+                                            difficulty: difficulty, moves: history.count)
+            }
+        }
     }
 
     // MARK: AI opponent

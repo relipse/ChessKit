@@ -1,26 +1,58 @@
 import Foundation
 
-/// Difficulty presets that map to search depth and a touch of randomness.
-public enum Difficulty: String, CaseIterable, Identifiable, Codable, Sendable {
-    case easy, medium, hard
+/// A difficulty level (1–10). Higher levels search deeper and blunder less.
+public struct Difficulty: Codable, Identifiable, Hashable, Sendable {
+    public let level: Int   // 1...10
 
-    public var id: String { rawValue }
-    public var title: String { rawValue.capitalized }
+    public init(level: Int) { self.level = max(1, min(10, level)) }
+
+    public var id: Int { level }
+    public var title: String { "Level \(level)" }
+
+    /// All ten levels, easiest first.
+    public static let all: [Difficulty] = (1...10).map(Difficulty.init(level:))
+
+    public static var easy: Difficulty { Difficulty(level: 2) }
+    public static var medium: Difficulty { Difficulty(level: 5) }
+    public static var hard: Difficulty { Difficulty(level: 9) }
+
+    /// One-line note on what changes at this level.
+    public var blurb: String {
+        switch level {
+        case 1:  return "Beginner — plays mostly random moves."
+        case 2:  return "Very easy — frequently blunders."
+        case 3:  return "Easy — looks one move ahead, often slips."
+        case 4:  return "Casual — short tactics, occasional mistakes."
+        case 5:  return "Improving — basic tactics, rarely blunders."
+        case 6:  return "Intermediate — searches a little deeper."
+        case 7:  return "Skilled — solid tactical play, no free gifts."
+        case 8:  return "Strong — never throws a piece away."
+        case 9:  return "Expert — deeper lookahead."
+        default: return "Master — deepest search, always its best move."
+        }
+    }
 
     /// Nominal search depth (plies). Drop-heavy variants get clamped in the engine.
     public var depth: Int {
-        switch self {
-        case .easy: return 2
-        case .medium: return 3
-        case .hard: return 4
+        switch level {
+        case 1, 2:  return 1
+        case 3, 4, 5: return 2
+        case 6, 7:  return 3
+        default:    return 4
         }
     }
-    /// Probability of *not* picking the very best move (keeps easy levels beatable / human).
+
+    /// Probability of *not* picking the very best move (keeps low levels beatable).
     public var blunderChance: Double {
-        switch self {
-        case .easy: return 0.35
-        case .medium: return 0.10
-        case .hard: return 0.0
+        switch level {
+        case 1: return 0.80
+        case 2: return 0.60
+        case 3: return 0.45
+        case 4: return 0.30
+        case 5: return 0.18
+        case 6: return 0.12
+        case 7: return 0.06
+        default: return 0.0
         }
     }
 }
@@ -62,7 +94,7 @@ public struct SearchEngine: Sendable {
         // Difficulty: sometimes pick a near-best move instead of the best.
         if difficulty.blunderChance > 0, scored.count > 1,
            Double.random(in: 0..<1, using: &rng) < difficulty.blunderChance {
-            let topK = min(scored.count, difficulty == .easy ? 4 : 2)
+            let topK = min(scored.count, difficulty.level <= 3 ? 4 : 2)
             return scored[Int.random(in: 0..<topK, using: &rng)].move
         }
         // Randomise among equally-best moves so play isn't deterministic.

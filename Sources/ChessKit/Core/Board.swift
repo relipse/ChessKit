@@ -154,6 +154,13 @@ public struct Position: Equatable, Hashable, Sendable {
     /// Pseudo-legal destination squares reachable by the piece on `sq` (ignores leaving own king in check).
     public func pseudoTargets(from sq: Int) -> [Int] {
         guard let p = squares[sq] else { return [] }
+        return pseudoTargets(from: sq, asKind: p.kind, color: p.color)
+    }
+
+    /// Like `pseudoTargets(from:)` but treats the piece as moving like `kind` regardless of
+    /// what actually sits there — used by Wizard's Chess (movement determined by file).
+    public func pseudoTargets(from sq: Int, asKind: PieceKind, color: PieceColor) -> [Int] {
+        let p = Piece(color: color, kind: asKind)
         let f = sq % 8, r = sq / 8
         var out: [Int] = []
         func add(_ ff: Int, _ rr: Int) {

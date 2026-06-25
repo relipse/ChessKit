@@ -171,6 +171,48 @@ final class ChessKitTests: XCTestCase {
         _ = game   // silence unused
     }
 
+    func testLosersForcedCaptureAndInvertedWin() {
+        let v = LosersChess()
+        // 1.e4 d5 — now exd5 is a capture, so captures must be the only legal moves.
+        var pos = v.startPosition()
+        pos = v.make(Move(from: "e2".squareIndex!, to: "e4".squareIndex!), in: pos)
+        pos = v.make(Move(from: "d7".squareIndex!, to: "d5".squareIndex!), in: pos)
+        let moves = v.legalMoves(pos)
+        XCTAssertFalse(moves.isEmpty)
+        XCTAssertTrue(moves.allSatisfy { LosersChess.isCapture($0, in: pos) }, "captures are compulsory")
+    }
+
+    func testShapeshifterFileMovement() {
+        let v = ShapeshifterChess()
+        // A rook placed on the d-file should move like a queen (diagonals available).
+        let pos = Position(fen: "4k3/8/8/8/8/8/8/3RK3 w - - 0 1")!  // white rook d1, king e1
+        let targets = Set(v.legalMoves(pos).filter { $0.from == "d1".squareIndex! }.map(\.to))
+        // Diagonal d1-h5 square like a queen would reach:
+        XCTAssertTrue(targets.contains("h5".squareIndex!), "d-file piece should move like a queen")
+        XCTAssertEqual(ShapeshifterChess.fileKind(3), .queen)
+        XCTAssertEqual(ShapeshifterChess.fileKind(4), .king)
+        XCTAssertEqual(ShapeshifterChess.fileKind(2), .bishop)
+    }
+
+    func testSavedGameRoundTrips() {
+        let v = Chess960(positionID: 4)
+        var pos = v.startPosition()
+        var moves: [Move] = []
+        for _ in 0..<6 {
+            guard let m = v.legalMoves(pos).first else { break }
+            moves.append(m); pos = v.make(m, in: pos)
+        }
+        var rookFiles: [String: Int] = [:]
+        for (k, val) in v.startPosition().castleRookFile { rookFiles[String(k)] = val }
+        let saved = SavedGame(name: "t", date: Date(timeIntervalSince1970: 0), variantName: "Fischer Random",
+                              startFEN: v.startPosition().fen(), rookFiles: rookFiles, moves: moves,
+                              humanColor: .white, difficulty: .medium)
+        let data = try! JSONEncoder().encode(saved)
+        let back = try! JSONDecoder().decode(SavedGame.self, from: data)
+        XCTAssertEqual(back.moves, moves)
+        XCTAssertEqual(back.startFEN, saved.startFEN)
+    }
+
     func testAIPlaysLegalMoves() {
         for v in Variants.all {
             let engine = SearchEngine(variant: v, difficulty: .easy)

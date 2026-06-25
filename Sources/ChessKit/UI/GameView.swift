@@ -30,9 +30,10 @@ public struct ChessGameView: View {
         switch launch {
         case .fresh(let color, let diff):
             controller = GameController(variant: variant, humanColor: color, difficulty: diff,
-                                        suite: suite, store: store)
+                                        suite: suite, store: store, leaderboardID: brand.leaderboardID)
         case .restore(let saved):
-            controller = GameController(variant: variant, suite: suite, store: store, restore: saved)
+            controller = GameController(variant: variant, suite: suite, store: store, restore: saved,
+                                        leaderboardID: brand.leaderboardID)
         }
         _game = StateObject(wrappedValue: controller)
         self.appearance = appearance
@@ -82,7 +83,7 @@ public struct ChessGameView: View {
     private var header: some View {
         HStack(spacing: 10) {
             if let onExit {
-                Button { onExit() } label: {
+                Button { game.recordToHistory(); onExit() } label: {
                     Image(systemName: "chevron.left").font(.title3.weight(.semibold))
                 }
             }

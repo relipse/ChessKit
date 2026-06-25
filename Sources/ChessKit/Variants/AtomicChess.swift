@@ -100,6 +100,7 @@ public struct AtomicChess: ChessVariant {
 /// The built-in variants, in menu order.
 public enum Variants {
     public static let all: [ChessVariant] = [
-        StandardChess(), KriegspielChess(), CrazyhouseChess(), AtomicChess(), Chess960()
+        StandardChess(), KriegspielChess(), CrazyhouseChess(), AtomicChess(),
+        Chess960(), LosersChess(), ShapeshifterChess()
     ]
 }

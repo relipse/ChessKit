@@ -6,12 +6,34 @@ public struct Brand: Sendable {
     public var accent: Color
     public var title: String
     public var systemImage: String
-    public init(accent: Color, title: String, systemImage: String = "crown.fill") {
+    /// Numeric App Store ID (e.g. "6743000000"); enables direct Rate/Share links once known.
+    public var appStoreID: String?
+    /// Game Center leaderboard ID for wins (configured in App Store Connect).
+    public var leaderboardID: String?
+
+    public init(accent: Color, title: String, systemImage: String = "crown.fill",
+                appStoreID: String? = nil, leaderboardID: String? = nil) {
         self.accent = accent
         self.title = title
         self.systemImage = systemImage
+        self.appStoreID = appStoreID
+        self.leaderboardID = leaderboardID
     }
     public static let standard = Brand(accent: Color(red: 0.55, green: 0.36, blue: 0.20), title: "Chess")
+
+    /// App Store listing URL (falls back to a search if the id isn't set yet).
+    public var appStoreURL: URL {
+        if let id = appStoreID { return URL(string: "https://apps.apple.com/app/id\(id)")! }
+        return URL(string: "https://apps.apple.com/")!
+    }
+    /// Deep link that opens the App Store review prompt.
+    public var reviewURL: URL {
+        if let id = appStoreID {
+            return URL(string: "https://apps.apple.com/app/id\(id)?action=write-review")!
+        }
+        return appStoreURL
+    }
+    public var shareMessage: String { "Play \(title) Chess — beat the computer at \(title) Chess!" }
 }
 
 public enum Theme {
