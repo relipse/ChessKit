@@ -2,20 +2,8 @@ import SwiftUI
 #if canImport(MultipeerConnectivity)
 import MultipeerConnectivity
 
-/// Wire packet for a nearby (multi-device) Bughouse match.
-struct BugPacket: Codable {
-    enum Kind: String, Codable { case assign, sync, moveRequest, move, chat }
-    var kind: Kind
-    var board: Int?
-    var move: Move?
-    var line: String?
-    var seat: Int?              // assign: the recipient's seat
-    var seatLevels: [Int]?      // per seat: -1 = human, 1…10 = computer level
-    var baseTime: Double?
-    var increment: Double?
-    var moveLog: [BughouseLogEntry]?
-    var clocks: [Double]?
-}
+// `BugPacket` (the shared wire packet) is defined in BughouseOnlineService.swift so both the
+// nearby (Multipeer) and online (server-relay) transports can use it.
 
 /// Host-authoritative Bughouse over MultipeerConnectivity: the host runs the real game and the
 /// bots/clocks; joiners are thin clients that own one seat each and mirror the host. All peers

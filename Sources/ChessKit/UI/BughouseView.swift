@@ -132,7 +132,7 @@ struct BughouseMenuView: View {
         }
         .sheet(isPresented: $showLoad) { BughouseLoadView(brand: brand, store: store) { onResume($0) } }
         .sheet(isPresented: $showMore) { MoreGamesView(currentAppStoreID: brand.appStoreID, brand: brand) }
-        .sheet(isPresented: $showOnline) { InternetGameView(brand: brand) }
+        .sheet(isPresented: $showOnline) { BughouseInternetView(brand: brand, store: store, appearance: appearance) }
         .sheet(isPresented: $showRules) { BughouseRulesView(brand: brand) }
         .sheet(isPresented: $showAppearance) { BughouseAppearanceView(brand: brand, appearance: appearance) }
         .sheet(isPresented: $showAbout) { AboutView(brand: brand) }

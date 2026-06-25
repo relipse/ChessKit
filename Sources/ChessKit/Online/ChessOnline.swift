@@ -189,6 +189,43 @@ public final class ChessOnline: ObservableObject {
         } catch { return nil }
     }
 
+    // MARK: Generic event relay (Bughouse 4-player)
+
+    public struct GameEvent: Sendable { public let id: Int; public let byUser: String; public let kind: String; public let payload: String }
+
+    /// Post an opaque event (e.g. an encoded BugPacket) to a game's append-only log. Returns its id.
+    public func eventPost(gameId: String, kind: String, payload: String) async -> Int? {
+        do { let r = try await request("event_post", method: "POST",
+                body: ["game_id": gameId, "kind": kind, "payload": payload]); return r["id"] as? Int }
+        catch { return nil }
+    }
+    /// Poll a game's events after `since` (the last id seen). Server-assigned id is the cursor.
+    public func eventPoll(gameId: String, since: Int) async -> (events: [GameEvent], status: String)? {
+        do { let r = try await request("event_poll&game_id=\(gameId)&since=\(since)")
+            let evs = (r["events"] as? [[String: Any]] ?? []).map {
+                GameEvent(id: ($0["id"] as? Int) ?? Int("\($0["id"] ?? "0")") ?? 0,
+                          byUser: $0["by_user"] as? String ?? "", kind: $0["kind"] as? String ?? "",
+                          payload: $0["payload"] as? String ?? "") }
+            let status = (r["game"] as? [String: Any])?["status"] as? String ?? "lobby"
+            return (evs, status)
+        } catch { return nil }
+    }
+    /// Host sets a seat to a bot (or open) on the server.
+    public func seatSet(gameId: String, seat: Int, bot: Bool, level: Int = 5) async {
+        _ = try? await request("seat_set", method: "POST",
+            body: ["game_id": gameId, "seat_index": seat, "type": bot ? "bot" : "open", "bot_level": level])
+    }
+    /// Per-seat occupancy for a game: index, the player's name (nil = open), bot flag + level.
+    public func gameSeats(gameId: String) async -> [(index: Int, name: String?, isBot: Bool, level: Int)] {
+        do { let r = try await request("game_get&id=\(gameId)")
+            return (r["seats"] as? [[String: Any]] ?? []).map {
+                (index: ($0["seat_index"] as? Int) ?? Int("\($0["seat_index"] ?? "0")") ?? 0,
+                 name: $0["name"] as? String,
+                 isBot: (($0["is_bot"] as? Int) ?? Int("\($0["is_bot"] ?? "0")") ?? 0) == 1,
+                 level: ($0["bot_level"] as? Int) ?? Int("\($0["bot_level"] ?? "5")") ?? 5) }
+        } catch { return [] }
+    }
+
     public func deleteAccount() async {
         await run { _ = try await self.request("delete_account", method: "POST"); self.signOut() }
     }
