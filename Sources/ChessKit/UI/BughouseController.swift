@@ -408,11 +408,20 @@ public final class BughouseController: ObservableObject {
             // Play at a human-ish pace (not instant), varied so the two boards don't move in lockstep.
             try? await Task.sleep(nanoseconds: UInt64.random(in: 1_200_000_000...2_800_000_000))
             guard let self else { return }
-            guard self.boards[b].pos == snapshot, !self.status.isOver else { self.thinking[b] = false; return }
             self.thinking[b] = false
-            if let m = await best {
+            guard !self.status.isOver else { return }
+            // A pocket change (a piece arriving from the partner's capture) must NOT abort the move —
+            // it only changes the reserve, not the board. Bail only if the board itself moved on / off turn.
+            guard self.boards[b].pos.squares == snapshot.squares,
+                  self.boards[b].pos.sideToMove == snapshot.sideToMove else { self.maybeStartAI(b); return }
+            guard let m = await best else { self.maybeStartAI(b); return }
+            let legal = self.rules.legalMoves(self.boards[b].pos)
+            if legal.contains(where: { $0.from == m.from && $0.to == m.to && $0.dropKind == m.dropKind && $0.promotion == m.promotion }) {
                 self.apply(b, m)
+                self.botRequest[talkSeat] = nil   // a coaching hint is consumed after one move
                 if Int.random(in: 0..<100) < 22 { self.botTalk(seat: talkSeat) }   // coach the partner
+            } else {
+                self.maybeStartAI(b)   // stale move (rare) — recompute from the current position
             }
         }
     }
