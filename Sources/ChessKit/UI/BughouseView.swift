@@ -1,5 +1,8 @@
 import SwiftUI
 import StoreKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 /// Root for the Bughouse app: menu → seat setup → two-board match (with save/load).
 public struct BughouseRootView: View {
@@ -8,6 +11,7 @@ public struct BughouseRootView: View {
     @StateObject private var appearance: Appearance
     @StateObject private var store = BughouseStore()
     @State private var launch: Launch?
+    @State private var nearby: BughouseNearbyService?
 
     enum Launch: Identifiable {
         case fresh([BughouseSeat: SeatPlayer], Double, Double), restore(BughouseSave)
@@ -24,14 +28,26 @@ public struct BughouseRootView: View {
             if UserDefaults.standard.string(forKey: "shot") == "game" {
                 BughouseGameView(brand: brand, appearance: appearance,
                                  controller: DemoBughouse.controller(), onExit: {})
+            } else if let nearby {
+                BughouseNearbyFlow(brand: brand, appearance: appearance, service: nearby, store: store,
+                                   onExit: { nearby.stop(); self.nearby = nil })
             } else if let launch {
                 gameView(launch)
             } else {
                 BughouseMenuView(brand: brand, store: store, appearance: appearance,
-                                 onNew: { launch = .fresh($0, $1, $2) }, onResume: { launch = .restore($0) })
+                                 onNew: { launch = .fresh($0, $1, $2) }, onResume: { launch = .restore($0) },
+                                 onNearby: { nearby = BughouseNearbyService(displayName: Self.deviceName) })
             }
         }
         .tint(brand.accent)
+    }
+
+    static var deviceName: String {
+        #if canImport(UIKit)
+        return UIDevice.current.name
+        #else
+        return ProcessInfo.processInfo.hostName
+        #endif
     }
 
     @ViewBuilder private func gameView(_ l: Launch) -> some View {
@@ -54,6 +70,7 @@ struct BughouseMenuView: View {
     @ObservedObject var appearance: Appearance
     let onNew: ([BughouseSeat: SeatPlayer], Double, Double) -> Void
     let onResume: (BughouseSave) -> Void
+    let onNearby: () -> Void
 
     @State private var showSetup = false
     @State private var showLoad = false
@@ -107,7 +124,9 @@ struct BughouseMenuView: View {
             if launchCount >= 10 && !didPromptReview { didPromptReview = true
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { requestReview() } }
         }
-        .sheet(isPresented: $showSetup) { BughouseSetupView(brand: brand) { s, base, inc in showSetup = false; onNew(s, base, inc) } }
+        .sheet(isPresented: $showSetup) {
+            BughouseSetupView(brand: brand, onNearby: { showSetup = false; onNearby() }) { s, base, inc in showSetup = false; onNew(s, base, inc) }
+        }
         .sheet(isPresented: $showLoad) { BughouseLoadView(brand: brand, store: store) { onResume($0) } }
         .sheet(isPresented: $showMore) { MoreGamesView(currentAppStoreID: brand.appStoreID, brand: brand) }
         .sheet(isPresented: $showRules) { BughouseRulesView(brand: brand) }
@@ -225,6 +244,7 @@ struct BughouseAppearanceView: View {
 /// Seat setup with quick presets + per-seat control.
 public struct BughouseSetupView: View {
     let brand: Brand
+    let onNearby: () -> Void
     let onStart: ([BughouseSeat: SeatPlayer], Double, Double) -> Void
     @State private var human: [Bool] = [true, false, false, false]
     @State private var level = 4
@@ -236,8 +256,9 @@ public struct BughouseSetupView: View {
         ("3|2", 180, 2), ("5|0", 300, 0), ("10|0 — relaxed", 600, 0),
     ]
 
-    public init(brand: Brand, onStart: @escaping ([BughouseSeat: SeatPlayer], Double, Double) -> Void) {
-        self.brand = brand; self.onStart = onStart
+    public init(brand: Brand, onNearby: @escaping () -> Void = {},
+                onStart: @escaping ([BughouseSeat: SeatPlayer], Double, Double) -> Void) {
+        self.brand = brand; self.onNearby = onNearby; self.onStart = onStart
     }
 
     public var body: some View {
@@ -251,9 +272,15 @@ public struct BughouseSetupView: View {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
                             preset("You + 3 bots", [true, false, false, false])
                             preset("You + partner, 2 bots", [true, false, false, true])
-                            preset("4 humans", [true, true, true, true])
+                            preset("4 humans (same device)", [true, true, true, true])
                             preset("Watch (4 bots)", [false, false, false, false])
                         }
+                        Button(action: onNearby) {
+                            Label("Nearby iPhones (separate devices)", systemImage: "wifi")
+                                .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 11)
+                                .background(brand.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
+                                .foregroundStyle(brand.accent)
+                        }.buttonStyle(.plain)
                     }.padding(.horizontal)
                     teamCard("Team A", seats: [.b1White, .b2Black])
                     teamCard("Team B", seats: [.b1Black, .b2White])

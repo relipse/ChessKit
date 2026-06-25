@@ -74,6 +74,16 @@ public enum BughouseStatus: Equatable, Sendable {
     var isOver: Bool { if case .ongoing = self { return false }; return true }
 }
 
+/// Transport the controller uses to sync a nearby (multi-device) match.
+public protocol BughouseNet: AnyObject {
+    func sendMoveToHost(board: Int, move: Move)   // client → host (a move request)
+    func broadcastMove(board: Int, move: Move)    // host → all peers (authoritative move)
+    func sendChat(_ line: String)                 // table talk to peers
+}
+
+/// Where this device sits in a networked match.
+public enum BughouseNetRole: Sendable { case offline, host, client }
+
 /// Drives a single-device Bughouse match across two boards. Each board plays by Crazyhouse
 /// rules, but captured pieces are passed to the **partner's** reserve on the other board.
 @MainActor
@@ -119,9 +129,15 @@ public final class BughouseController: ObservableObject {
 
     // Chess clocks (the heart of bughouse — you can stall, sitting on your time for a piece).
     @Published public private(set) var clock: [Double]   // seconds remaining, by seat.rawValue
-    public let baseTime: Double
-    public let increment: Double
+    public private(set) var baseTime: Double
+    public private(set) var increment: Double
     private var tickTask: Task<Void, Never>?
+
+    // Nearby (multi-device) play. offline → all human seats are this device's (same-device hot-seat).
+    public var role: BughouseNetRole = .offline
+    public weak var net: BughouseNet?
+    /// Seats this device's local humans control (host/client only). Empty in offline.
+    public var localSeats: Set<BughouseSeat> = []
 
     private static func freshBoards() -> [Board] {
         var start = Position.standard
@@ -229,7 +245,9 @@ public final class BughouseController: ObservableObject {
     }
     public func isHumanToMove(_ board: Int) -> Bool {
         guard !status.isOver else { return false }
-        return player(board, boards[board].pos.sideToMove) == .human
+        let s = seat(board: board, color: boards[board].pos.sideToMove)
+        if role == .offline { return seats[s] == .human }
+        return localSeats.contains(s)   // nearby: only the seats this device owns
     }
 
     // MARK: Human interaction (board index 0/1)
@@ -297,8 +315,15 @@ public final class BughouseController: ObservableObject {
             guard let m = legal.first(where: { $0.from == rawMove.from && $0.to == rawMove.to && $0.promotion == rawMove.promotion }) else { clearSel(b); return }
             move = m
         }
+        // A client doesn't own the board state — it asks the host, then applies the host's echo.
+        if role == .client { clearSel(b); net?.sendMoveToHost(board: b, move: move); return }
         apply(b, move)
     }
+
+    /// Host applies a validated move that arrived from a peer (then broadcasts it onward).
+    public func receivePeerMove(board b: Int, _ move: Move) { guard role == .host else { return }; commit(b, move) }
+    /// Client applies the host's authoritative move.
+    public func receiveHostMove(board b: Int, _ move: Move) { guard role == .client else { return }; apply(b, move) }
 
     private func apply(_ b: Int, _ move: Move) {
         var bd = boards[b]
@@ -328,8 +353,9 @@ public final class BughouseController: ObservableObject {
         if !replaying { clock[seat(board: b, color: mover).rawValue] += increment }
         updateStatus()
         if !replaying {
-            autosave()
-            if !status.isOver { maybeStartAI(b) }   // next side on this board
+            if role == .host { net?.broadcastMove(board: b, move: move) }   // tell the peers
+            if role != .client { autosave() }
+            if !status.isOver && role != .client { maybeStartAI(b) }   // host/offline run the bots
         }
     }
 
@@ -459,12 +485,33 @@ public final class BughouseController: ObservableObject {
     public func say(_ phrase: Phrase, from seat: BughouseSeat? = nil) {
         let speaker = seat ?? primaryHumanSeat ?? .b1White
         let who = (speaker == primaryHumanSeat) ? "You" : speaker.label
-        chat.append("\(who): \(phrase.text)")
+        let line = "\(who): \(phrase.text)"
+        chat.append(line)
         if chat.count > 30 { chat.removeFirst(chat.count - 30) }
         if let bias = phrase.bias {
             let mate = partner(of: speaker)
             if case .computer = seats[mate] { botRequest[mate] = bias }
         }
+        net?.sendChat(line)   // table talk is public across all devices
+    }
+
+    /// Append table talk that arrived from another device.
+    public func receiveChat(_ line: String) {
+        chat.append(line)
+        if chat.count > 30 { chat.removeFirst(chat.count - 30) }
+    }
+
+    /// Client: adopt the host's full game state (replay its move log + clocks). Used on join.
+    public func loadState(moveLog log: [BughouseLogEntry], baseTime base: Double, increment inc: Double, clocks: [Double]) {
+        aiTasks.forEach { $0?.cancel() }; tickTask?.cancel()
+        baseTime = base; increment = inc
+        boards = BughouseController.freshBoards()
+        moveLog = []
+        clock = [Double](repeating: base, count: 4)
+        replayLog(log)
+        if clocks.count == 4 { clock = clocks }
+        status = .ongoing
+        startTicking()
     }
 
     public var resultText: String {
