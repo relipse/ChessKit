@@ -231,7 +231,7 @@ struct BughouseNearbyLobby: View {
     @State private var plan = [0, 2, 2, 1]                       // per seat: 0 You · 1 Bot · 2 Open
     @State private var level = 4
     @State private var tc = 1
-    private let tcs: [(String, Double, Double)] = [("1|0", 60, 0), ("2|0", 120, 0), ("3|2", 180, 2), ("5|0", 300, 0)]
+    private let tcs: [(String, Double, Double)] = [("No timer", 0, 0), ("3 min", 180, 0), ("5 min", 300, 0), ("10 min", 600, 0)]
 
     var body: some View {
         NavigationStack {

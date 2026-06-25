@@ -184,8 +184,11 @@ public final class BughouseController: ObservableObject {
     }
 
     /// Run the clocks: both boards' on-move seats tick down in real time; a flag ends the match.
+    public var untimed: Bool { baseTime <= 0 }
+
     private func startTicking() {
         tickTask?.cancel()
+        guard baseTime > 0 else { return }   // "No timer" → clocks never run
         tickTask = Task { [weak self] in
             var last = Date()
             while !Task.isCancelled {
@@ -208,6 +211,7 @@ public final class BughouseController: ObservableObject {
     }
 
     public func clockText(seat: BughouseSeat) -> String {
+        if untimed { return "∞" }
         let t = max(0, clock[seat.rawValue])
         return String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
     }
