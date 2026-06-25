@@ -199,7 +199,7 @@ public struct ChessGameView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(game.variant.blurb).font(.caption).foregroundStyle(.secondary)
                 Button { showMore = true } label: {
-                    Label("More games like this — support the developer", systemImage: "square.grid.2x2.fill")
+                    Label("More chess games by Kinsman Software", systemImage: "square.grid.2x2.fill")
                         .font(.caption2.weight(.semibold)).foregroundStyle(brand.accent)
                 }
             }
