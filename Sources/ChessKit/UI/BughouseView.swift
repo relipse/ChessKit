@@ -351,6 +351,7 @@ public struct BughouseGameView: View {
     @State private var showQuit = false
     @AppStorage("bug.board1Theme") private var board1Theme = "brown"
     @AppStorage("bug.board2Theme") private var board2Theme = "green"
+    @AppStorage("bug.talkButtons") private var talkButtons = false   // false = menu, true = on-screen buttons
     private let overhead: CGFloat = 132   // two reserves + two clock rows + turn line
 
     public init(brand: Brand, appearance: Appearance = .shared,
@@ -362,7 +363,7 @@ public struct BughouseGameView: View {
     public var body: some View {
         GeometryReader { geo in
             let landscape = geo.size.width > geo.size.height
-            let cmdH: CGFloat = game.hasHuman ? 56 : 0
+            let cmdH: CGFloat = game.hasHuman ? (talkButtons ? 98 : 56) : 0
             let availH = geo.size.height - cmdH - (game.status.isOver ? 40 : 0) - 4
             VStack(spacing: 4) {
                 header
@@ -512,24 +513,46 @@ public struct BughouseGameView: View {
     ]
 
     private var commandBar: some View {
-        HStack(spacing: 10) {
-            Menu {
-                ForEach(Self.phraseGroups, id: \.0) { group in
-                    Section(group.0) {
-                        ForEach(BughouseController.phrases.filter { group.1.contains($0.id) }) { p in
-                            Button("\(p.text) — \(p.hint)") { game.say(p) }
+        VStack(spacing: 3) {
+            HStack(spacing: 10) {
+                if !talkButtons {
+                    Menu {
+                        ForEach(Self.phraseGroups, id: \.0) { group in
+                            Section(group.0) {
+                                ForEach(BughouseController.phrases.filter { group.1.contains($0.id) }) { p in
+                                    Button("\(p.text) — \(p.hint)") { game.say(p) }
+                                }
+                            }
                         }
+                    } label: {
+                        Label("Talk to Partner", systemImage: "bubble.left.fill").font(.subheadline.weight(.semibold))
+                            .padding(.horizontal, 14).padding(.vertical, 9)
+                            .background(brand.accent.opacity(0.15), in: Capsule()).foregroundStyle(brand.accent)
                     }
                 }
-            } label: {
-                Label("Talk to Partner", systemImage: "bubble.left.fill").font(.subheadline.weight(.semibold))
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(brand.accent.opacity(0.15), in: Capsule()).foregroundStyle(brand.accent)
+                Text(game.chat.last ?? "Bughouse table talk")
+                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                Spacer(minLength: 0)
+                // Toggle: compact menu ⇄ on-screen buttons.
+                Button { talkButtons.toggle() } label: {
+                    Image(systemName: talkButtons ? "text.bubble" : "square.grid.2x2.fill").font(.subheadline)
+                        .foregroundStyle(brand.accent)
+                }
             }
-            Text(game.chat.last ?? "Call out to your partner — bughouse shorthand")
-                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            Spacer(minLength: 0)
-        }.frame(height: 50)
+            if talkButtons {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHGrid(rows: [GridItem(.fixed(26)), GridItem(.fixed(26))], spacing: 5) {
+                        ForEach(BughouseController.phrases) { p in
+                            Button { game.say(p) } label: {
+                                Text(p.text).font(.caption2.weight(.bold).monospaced())
+                                    .padding(.horizontal, 9).padding(.vertical, 5)
+                                    .background(brand.accent.opacity(0.15), in: Capsule()).foregroundStyle(brand.accent)
+                            }.buttonStyle(.plain)
+                        }
+                    }.padding(.horizontal, 2)
+                }.frame(height: 58)
+            }
+        }
     }
 
     /// Table-talk sheet: FICS-style shorthand grid + the public message log.

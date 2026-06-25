@@ -238,6 +238,17 @@ final class ChessKitTests: XCTestCase {
         XCTAssertEqual(game.selected, "e4".squareIndex!)
     }
 
+    func testPawnDuelKingChasesEdgePawn() {
+        // After White pushes the edge pawn (1.h4), Black (to move) must chase with the king.
+        let v = PawnDuelChess()
+        var pos = v.startPosition()
+        pos = v.make(Move(from: "h2".squareIndex!, to: "h4".squareIndex!), in: pos)
+        let engine = SearchEngine(variant: v, difficulty: Difficulty(level: 8))
+        let best = engine.bestMove(in: pos)
+        XCTAssertEqual(best?.from, "c8".squareIndex, "Black should move its king to chase the h-pawn")
+        if let to = best?.to { XCTAssertGreaterThan(to % 8, 2, "king should head toward the h-file") }
+    }
+
     @MainActor
     func testBughousePassesCaptureToPartner() {
         // All-human so we can drive both boards by hand.

@@ -59,8 +59,10 @@ public struct PawnDuelChess: ChessVariant {
             let promoSq = promoteRank * 8 + f
             let dist = abs(r - promoteRank)
             let pawnMoves = (r == startRank) ? dist - 1 : dist        // double-step from home
-            let need = chebyshev(king, promoSq) + (defenderToMove ? 0 : 1)
-            if need > pawnMoves { threat = max(threat, 760 - pawnMoves * 70) }   // can't catch it
+            // King catches it if it can reach the promotion square in time; it gets one extra
+            // tempo when it's the defender's move (the square-of-the-pawn rule).
+            let budget = pawnMoves + (defenderToMove ? 1 : 0)
+            if chebyshev(king, promoSq) > budget { threat = max(threat, 760 - pawnMoves * 70) }  // unstoppable
         }
         // Stay near the most-advanced enemy pawn (encourages chasing even when still catchable).
         let runner = pawns.min { (promoteRank == 0 ? $0 / 8 : 7 - $0 / 8) < (promoteRank == 0 ? $1 / 8 : 7 - $1 / 8) }!
