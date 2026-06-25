@@ -17,7 +17,50 @@ public enum BughouseSeat: Int, CaseIterable, Identifiable, Sendable {
     }
 }
 
-public enum SeatPlayer: Equatable, Sendable { case human, computer(Difficulty) }
+public enum SeatPlayer: Equatable, Codable, Sendable { case human, computer(Difficulty) }
+
+/// One move in the global Bughouse order (which board + the move) — replaying the log
+/// reconstructs both boards including all passed pieces.
+public struct BughouseLogEntry: Codable, Sendable { public var board: Int; public var move: Move }
+
+/// A serialisable Bughouse match.
+public struct BughouseSave: Codable, Identifiable, Sendable {
+    public var id: UUID
+    public var name: String
+    public var date: Date
+    public var seats: [SeatPlayer]          // indexed by BughouseSeat.rawValue (0–3)
+    public var log: [BughouseLogEntry]
+    public init(id: UUID = UUID(), name: String, date: Date, seats: [SeatPlayer], log: [BughouseLogEntry]) {
+        self.id = id; self.name = name; self.date = date; self.seats = seats; self.log = log
+    }
+}
+
+/// On-disk store for Bughouse matches (autosave + named slots).
+@MainActor
+public final class BughouseStore: ObservableObject {
+    @Published public private(set) var autosave: BughouseSave?
+    @Published public private(set) var slots: [BughouseSave] = []
+    private let url: URL
+    private struct Disk: Codable { var autosave: BughouseSave?; var slots: [BughouseSave] }
+
+    public init(filename: String = "bughouse_games.json") {
+        let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first
+            ?? FileManager.default.temporaryDirectory
+        url = dir.appendingPathComponent(filename)
+        if let d = try? Data(contentsOf: url), let disk = try? JSONDecoder().decode(Disk.self, from: d) {
+            autosave = disk.autosave; slots = disk.slots
+        }
+    }
+    private func persist() {
+        if let d = try? JSONEncoder().encode(Disk(autosave: autosave, slots: slots)) { try? d.write(to: url) }
+    }
+    public func setAutosave(_ s: BughouseSave?) { autosave = s; persist() }
+    public func save(_ s: BughouseSave) {
+        if let i = slots.firstIndex(where: { $0.id == s.id }) { slots[i] = s } else { slots.insert(s, at: 0) }
+        slots.sort { $0.date > $1.date }; persist()
+    }
+    public func delete(_ s: BughouseSave) { slots.removeAll { $0.id == s.id }; persist() }
+}
 
 public enum BughouseStatus: Equatable, Sendable {
     case ongoing
@@ -42,26 +85,64 @@ public final class BughouseController: ObservableObject {
     @Published public var boards: [Board]
     @Published public private(set) var status: BughouseStatus = .ongoing
     @Published public private(set) var thinking: [Bool] = [false, false]
+    @Published public private(set) var moveLog: [BughouseLogEntry] = []
 
     public let seats: [BughouseSeat: SeatPlayer]
+    public let store: BughouseStore?
+    private var gameID = UUID()
+    private var replaying = false
     private let rules = CrazyhouseChess()
     private var aiTasks: [Task<Void, Never>?] = [nil, nil]
 
-    public init(seats: [BughouseSeat: SeatPlayer]) {
-        self.seats = seats
+    private static func freshBoards() -> [Board] {
         var start = Position.standard
         start.pockets = [.white: Pocket(), .black: Pocket()]
-        boards = [Board(pos: start), Board(pos: start)]
+        return [Board(pos: start), Board(pos: start)]
+    }
+
+    public init(seats: [BughouseSeat: SeatPlayer], store: BughouseStore? = nil, restore: BughouseSave? = nil) {
+        if let restore {
+            var s: [BughouseSeat: SeatPlayer] = [:]
+            for seat in BughouseSeat.allCases {
+                s[seat] = seat.rawValue < restore.seats.count ? restore.seats[seat.rawValue] : .computer(.medium)
+            }
+            self.seats = s
+            self.gameID = restore.id
+        } else {
+            self.seats = seats
+        }
+        self.store = store
+        self.boards = BughouseController.freshBoards()
+        if let restore { replayLog(restore.log) }
         for b in 0..<2 { maybeStartAI(b) }
     }
 
     public func newGame() {
         aiTasks.forEach { $0?.cancel() }
-        var start = Position.standard
-        start.pockets = [.white: Pocket(), .black: Pocket()]
-        boards = [Board(pos: start), Board(pos: start)]
-        status = .ongoing; thinking = [false, false]
+        gameID = UUID()
+        boards = BughouseController.freshBoards()
+        moveLog = []; status = .ongoing; thinking = [false, false]
+        store?.setAutosave(nil)
         for b in 0..<2 { maybeStartAI(b) }
+    }
+
+    private func replayLog(_ log: [BughouseLogEntry]) {
+        replaying = true
+        for entry in log { apply(entry.board, entry.move) }
+        replaying = false
+    }
+
+    // MARK: Save
+
+    public func toSave(name: String) -> BughouseSave {
+        let arr = BughouseSeat.allCases.map { seats[$0] ?? .computer(.medium) }
+        return BughouseSave(id: gameID, name: name, date: Date(), seats: arr, log: moveLog)
+    }
+    public func saveSlot(name: String) { store?.save(toSave(name: name)) }
+    private func autosave() {
+        guard let store else { return }
+        if status.isOver || moveLog.isEmpty { store.setAutosave(nil) }
+        else { store.setAutosave(toSave(name: "Autosave")) }
     }
 
     // MARK: Seat / turn helpers
@@ -172,8 +253,12 @@ public final class BughouseController: ObservableObject {
         }
         bd.selected = nil; bd.targets = []; bd.pocketSel = nil
         boards[b] = bd
+        moveLog.append(BughouseLogEntry(board: b, move: move))
         updateStatus()
-        if !status.isOver { maybeStartAI(b) }   // next side on this board
+        if !replaying {
+            autosave()
+            if !status.isOver { maybeStartAI(b) }   // next side on this board
+        }
     }
 
     private func clearSel(_ b: Int) {
