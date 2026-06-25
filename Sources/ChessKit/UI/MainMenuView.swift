@@ -178,7 +178,7 @@ public struct MainMenuView: View {
                 .frame(width: 116, height: 116)
                 .background(Theme.heroGradient(brand.accent), in: RoundedRectangle(cornerRadius: 26))
                 .shadow(color: brand.accent.opacity(0.4), radius: 12, y: 6)
-            Text("\(brand.title) Chess")
+            Text(brand.displayTitle)
                 .font(.system(.largeTitle, design: .rounded).weight(.heavy))
                 .multilineTextAlignment(.center)
             Text(variant.blurb)

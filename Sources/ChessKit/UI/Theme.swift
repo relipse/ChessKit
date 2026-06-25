@@ -21,6 +21,11 @@ public struct Brand: Sendable {
     }
     public static let standard = Brand(accent: Color(red: 0.55, green: 0.36, blue: 0.20), title: "Chess")
 
+    /// Title for headings — avoids "Chess Chess" when the variant title already says "Chess".
+    public var displayTitle: String {
+        title.range(of: "chess", options: .caseInsensitive) != nil ? title : "\(title) Chess"
+    }
+
     /// App Store listing URL (falls back to a search if the id isn't set yet).
     public var appStoreURL: URL {
         if let id = appStoreID { return URL(string: "https://apps.apple.com/app/id\(id)")! }
@@ -33,7 +38,7 @@ public struct Brand: Sendable {
         }
         return appStoreURL
     }
-    public var shareMessage: String { "Play \(title) Chess — beat the computer at \(title) Chess!" }
+    public var shareMessage: String { "Play \(displayTitle) — beat the computer!" }
 }
 
 public enum Theme {

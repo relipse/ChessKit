@@ -52,11 +52,11 @@ That's how I came to faith in Christ: by trusting in Christ alone for forgivenes
                             .frame(width: 56, height: 56)
                             .background(Theme.heroGradient(brand.accent), in: RoundedRectangle(cornerRadius: 13))
                         VStack(alignment: .leading) {
-                            Text("\(brand.title) Chess").font(.title2.weight(.bold))
+                            Text(brand.displayTitle).font(.title2.weight(.bold))
                             Text("Kinsman Software LLC").font(.subheadline).foregroundStyle(.secondary)
                         }
                     }
-                    Text("Play \(brand.title) Chess against the computer. Part of a family of chess variant apps by Kinsman Software LLC.")
+                    Text("Play \(brand.displayTitle) against the computer. Part of a family of chess apps by Kinsman Software LLC.")
                         .font(.callout).foregroundStyle(.secondary)
 
                     Divider()
@@ -110,7 +110,7 @@ public struct SplashGate<Content: View>: View {
                     .font(.system(size: 72, weight: .semibold)).foregroundStyle(.white)
                     .frame(width: 132, height: 132)
                     .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 30))
-                Text("\(brand.title) Chess")
+                Text(brand.displayTitle)
                     .font(.system(.largeTitle, design: .rounded).weight(.heavy)).foregroundStyle(.white)
                 Spacer().frame(height: 8)
                 VStack(spacing: 2) {

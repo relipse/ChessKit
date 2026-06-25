@@ -52,8 +52,8 @@ public struct PieceSet: Identifiable, Hashable, Sendable {
     public static let all: [PieceSet] = [
         PieceSet(id: "wikipedia", name: "Wikipedia", assetPrefix: ""),
         PieceSet(id: "alpha",     name: "Alpha",     assetPrefix: "alpha_"),
-        PieceSet(id: "uscf",      name: "USCF",      assetPrefix: "uscf_"),
-        PieceSet(id: "classic",   name: "Classic",   assetPrefix: nil)
+        PieceSet(id: "uscf",      name: "USCF",      assetPrefix: "uscf_")
+        // "Classic" Unicode glyphs removed — the bundled artwork sets look far better.
     ]
 
     public static func set(id: String) -> PieceSet { all.first { $0.id == id } ?? all[0] }

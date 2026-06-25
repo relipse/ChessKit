@@ -37,7 +37,7 @@ public struct NearbyLobbyView: View {
         NavigationStack {
             VStack(spacing: 22) {
                 Image(systemName: "wifi").font(.system(size: 54)).foregroundStyle(brand.accent)
-                Text("Play \(brand.title) Chess with someone nearby")
+                Text("Play \(brand.displayTitle) with someone nearby")
                     .font(.title3.weight(.bold)).multilineTextAlignment(.center)
                 Text("Both devices need this app. Connects over Wi-Fi/Bluetooth — no internet or accounts.")
                     .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center)
