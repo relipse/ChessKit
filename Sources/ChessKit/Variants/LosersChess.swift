@@ -7,6 +7,7 @@ public struct LosersChess: ChessVariant {
     public init() {}
     public var name: String { "Losers" }
     public var blurb: String { "Win by getting checkmated OR by losing all your pieces (just your king left). If you can capture, you must." }
+    public var forcesCapture: Bool { true }
 
     public func legalMoves(_ pos: Position) -> [Move] {
         let legal = StandardChess.legalStandardMoves(pos)

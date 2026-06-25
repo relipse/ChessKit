@@ -12,6 +12,8 @@ public protocol ChessVariant: Sendable {
     var usesPockets: Bool { get }
     /// Whether opponent pieces are hidden from the player (Kriegspiel fog of war).
     var hidesOpponentPieces: Bool { get }
+    /// Whether a capture is compulsory when one is available (Losers/Antichess).
+    var forcesCapture: Bool { get }
 
     /// The starting position.
     func startPosition() -> Position
@@ -33,6 +35,7 @@ public extension ChessVariant {
     var blurb: String { "" }
     var usesPockets: Bool { false }
     var hidesOpponentPieces: Bool { false }
+    var forcesCapture: Bool { false }
 
     func startPosition() -> Position { .standard }
 

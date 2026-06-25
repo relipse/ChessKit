@@ -221,6 +221,23 @@ final class ChessKitTests: XCTestCase {
         else { XCTFail("lone-king side should win in Losers") }
     }
 
+    @MainActor
+    func testLosersForcedCaptureHint() {
+        let game = GameController(variant: LosersChess(), mode: .passAndPlay)
+        // 1.e4 d5 — now exd5 is a forced capture for White.
+        game.move(from: "e2".squareIndex!, to: "e4".squareIndex!)
+        game.move(from: "d7".squareIndex!, to: "d5".squareIndex!)
+        // White taps a non-capturing piece (g1 knight) → hint appears, highlighting e4 pawn.
+        game.tap("g1".squareIndex!)
+        XCTAssertTrue(game.mustCaptureHint)
+        XCTAssertTrue(game.mustCaptureSquares.contains("e4".squareIndex!))
+        XCTAssertNil(game.selected)
+        // Tapping the capturing pawn clears the hint and selects normally.
+        game.tap("e4".squareIndex!)
+        XCTAssertFalse(game.mustCaptureHint)
+        XCTAssertEqual(game.selected, "e4".squareIndex!)
+    }
+
     func testPawnDuelStartAndPlay() {
         let v = PawnDuelChess()
         let pos = v.startPosition()

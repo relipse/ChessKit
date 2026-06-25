@@ -9,6 +9,8 @@ public struct BoardView: View {
     public var lastMove: (from: Int, to: Int)?
     public var selected: Int?
     public var targets: Set<Int> = []
+    /// Pieces to pulse-highlight as a hint (e.g. the pieces that must capture in Losers).
+    public var hintSquares: Set<Int> = []
     public var checkSquare: Int?
     /// Pieces of this colour are hidden from view (fog of war). nil → show everything.
     public var hiddenColor: PieceColor?
@@ -28,7 +30,8 @@ public struct BoardView: View {
 
     public init(position: Position, flipped: Bool = false,
                 lastMove: (from: Int, to: Int)? = nil, selected: Int? = nil,
-                targets: Set<Int> = [], checkSquare: Int? = nil, hiddenColor: PieceColor? = nil,
+                targets: Set<Int> = [], hintSquares: Set<Int> = [], checkSquare: Int? = nil,
+                hiddenColor: PieceColor? = nil,
                 size: CGFloat, appearance: Appearance = .shared,
                 onTap: ((Int) -> Void)? = nil, onMove: ((Int, Int) -> Void)? = nil,
                 onDropPiece: ((PieceKind, Int) -> Void)? = nil) {
@@ -37,6 +40,7 @@ public struct BoardView: View {
         self.lastMove = lastMove
         self.selected = selected
         self.targets = targets
+        self.hintSquares = hintSquares
         self.checkSquare = checkSquare
         self.hiddenColor = hiddenColor
         self.size = size
@@ -130,6 +134,10 @@ public struct BoardView: View {
             if i == checkSquare { Rectangle().fill(Color.red.opacity(0.45)) }
             if i == dragOver, dragFrom != nil, i != dragFrom {
                 Rectangle().strokeBorder(Color.white.opacity(0.9), lineWidth: sq * 0.06)
+            }
+            if hintSquares.contains(i) {
+                RoundedRectangle(cornerRadius: 3)
+                    .strokeBorder(Color.orange, lineWidth: sq * 0.09)
             }
 
             if let piece, visible, i != dragFrom {

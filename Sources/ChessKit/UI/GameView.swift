@@ -154,6 +154,9 @@ public struct ChessGameView: View {
             if game.lastVerdictIllegal {
                 PillBadge("ILLEGAL — TRY AGAIN", color: .red, filled: false)
             }
+            if game.mustCaptureHint {
+                PillBadge("YOU MUST MAKE A CAPTURE", color: .orange)
+            }
             Spacer()
             if game.mode == .nearby, let name = nearby?.peerName {
                 Label(name, systemImage: "wifi").font(.caption2).foregroundStyle(.secondary)
@@ -178,6 +181,7 @@ public struct ChessGameView: View {
                   lastMove: game.lastMove,
                   selected: game.selected,
                   targets: game.targets,
+                  hintSquares: game.mustCaptureSquares,
                   checkSquare: game.checkSquare,
                   hiddenColor: game.fogColor,
                   size: size, appearance: appearance,

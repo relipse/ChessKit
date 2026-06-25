@@ -52,6 +52,11 @@ public final class GameController: ObservableObject {
     @Published public private(set) var umpireLog: [String] = []
     @Published public private(set) var lastVerdictIllegal = false
 
+    // Forced-capture hint (Losers): set when the player picks a piece that can't capture
+    // while a capture is compulsory. `mustCaptureSquares` are the pieces that *can* capture.
+    @Published public private(set) var mustCaptureHint = false
+    @Published public private(set) var mustCaptureSquares: Set<Int> = []
+
     private let defaults: UserDefaults
     private var engine: SearchEngine
     /// The position the current game started from (needed to save/replay, esp. Chess960).
@@ -173,6 +178,7 @@ public final class GameController: ObservableObject {
     public func tap(_ sq: Int) {
         guard isHumanTurn else { return }
         lastVerdictIllegal = false
+        mustCaptureHint = false; mustCaptureSquares = []
 
         // A pocket piece is armed → this tap is a drop target.
         if let kind = pocketSelection {
@@ -202,6 +208,16 @@ public final class GameController: ObservableObject {
                 targets = Set(pseudoDestinations(from: sq))
             } else {
                 let legal = variant.legalMoves(from: sq, in: position)
+                // Forced capture (Losers): picked a piece that can't capture while a capture exists.
+                if variant.forcesCapture, legal.isEmpty {
+                    let capSquares = capturingPieceSquares()
+                    if !capSquares.isEmpty {
+                        selected = nil; targets = []
+                        mustCaptureHint = true
+                        mustCaptureSquares = capSquares
+                        return
+                    }
+                }
                 var t = Set(legal.map(\.to))
                 // Also highlight the rook you can castle with.
                 for m in legal where m.castle != nil { t.insert(castleRookSquare(for: m)) }
@@ -210,6 +226,18 @@ public final class GameController: ObservableObject {
         } else {
             clearSelection()
         }
+    }
+
+    /// Squares of the side-to-move's pieces that have a legal capture (for the forced-capture hint).
+    private func capturingPieceSquares() -> Set<Int> {
+        var out: Set<Int> = []
+        for move in variant.legalMoves(position) where !move.isDrop {
+            if position.squares[move.to] != nil
+                || (position.squares[move.from]?.kind == .pawn && move.to == position.enPassant) {
+                out.insert(move.from)
+            }
+        }
+        return out
     }
 
     /// If `from` is the king and `tapped` is either a castle destination or the matching
