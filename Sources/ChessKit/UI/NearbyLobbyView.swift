@@ -20,8 +20,10 @@ public struct NearbyLobbyView: View {
 
     public init(variant: ChessVariant, brand: Brand, appearance: Appearance = .shared, store: GameStore) {
         self.variant = variant; self.brand = brand; self.appearance = appearance; self.store = store
+        // Service id derives from the brand title so it matches the app's Info.plist
+        // NSBonjourServices entry (also generated from the title).
         _service = StateObject(wrappedValue: NearbyService(
-            serviceType: NearbyService.serviceType(for: variant.name),
+            serviceType: NearbyService.serviceType(for: brand.title),
             displayName: NearbyLobbyView.deviceName()))
     }
 

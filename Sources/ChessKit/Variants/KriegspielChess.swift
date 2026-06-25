@@ -6,7 +6,7 @@ import Foundation
 public struct KriegspielChess: ChessVariant {
     public init() {}
     public var name: String { "Kriegspiel" }
-    public var blurb: String { "Fog of war — you see only your own army; a referee announces the rest." }
+    public var blurb: String { "Fog of war (also called Kriegspiel) — you see only your own army; a referee announces the rest." }
     public var hidesOpponentPieces: Bool { true }
 
     public func legalMoves(_ pos: Position) -> [Move] {
