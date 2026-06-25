@@ -35,7 +35,16 @@ public enum ChessAppCatalog {
                       systemImage: "flag.checkered", accent: Color(red: 0.588, green: 0.157, blue: 0.235)),
         ChessAppEntry(id: "6784079152", title: "Shapeshifter Chess",
                       blurb: "Pieces move by the file they stand on.",
-                      systemImage: "wand.and.stars", accent: Color(red: 0.275, green: 0.471, blue: 0.588))
+                      systemImage: "wand.and.stars", accent: Color(red: 0.275, green: 0.471, blue: 0.588)),
+        ChessAppEntry(id: "6784103827", title: "Pawn Duel",
+                      blurb: "King and three pawns in opposite corners.",
+                      systemImage: "flag.2.crossed.fill", accent: Color(red: 0.55, green: 0.36, blue: 0.20)),
+        ChessAppEntry(id: "6784272381", title: "Bughouse Chess",
+                      blurb: "4-player team chess — capture and pass to your partner.",
+                      systemImage: "person.2.square.stack", accent: Color(red: 0.149, green: 0.569, blue: 0.549)),
+        ChessAppEntry(id: "6784103760", title: "Chess by Kinsman Software",
+                      blurb: "Clean, classic chess vs the computer or a friend.",
+                      systemImage: "crown.fill", accent: Color(red: 0.55, green: 0.36, blue: 0.20))
     ]
 }
 

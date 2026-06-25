@@ -423,12 +423,16 @@ public final class BughouseController: ObservableObject {
         let engine = SearchEngine(variant: rules, difficulty: diff)
         let rules = self.rules
         let talkSeat = seat(board: b, color: snapshot.sideToMove)
+        // When nobody's playing (all-computer "watch" mode), move slower so a human can follow along.
+        let watching = !hasHuman
         aiTasks[b] = Task { [weak self] in
             async let best: Move? = Task.detached(priority: .userInitiated) {
                 BughouseController.pickMove(rules: rules, engine: engine, pos: snapshot, request: req)
             }.value
             // Play at a human-ish pace (not instant), varied so the two boards don't move in lockstep.
-            try? await Task.sleep(nanoseconds: UInt64.random(in: 1_200_000_000...2_800_000_000))
+            let lo: UInt64 = watching ? 2_600_000_000 : 1_200_000_000
+            let hi: UInt64 = watching ? 4_800_000_000 : 2_800_000_000
+            try? await Task.sleep(nanoseconds: UInt64.random(in: lo...hi))
             guard let self else { return }
             self.thinking[b] = false
             guard !self.status.isOver else { return }
