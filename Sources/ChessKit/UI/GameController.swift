@@ -160,6 +160,11 @@ public final class GameController: ObservableObject {
     /// Persist the current game to a named slot.
     public func saveSlot(name: String) { store?.save(toSaved(name: name)) }
 
+    /// Worth offering to save when leaving? (has moves and isn't finished)
+    public var isResumable: Bool { !history.isEmpty && !status.isOver }
+    /// Forget the in-progress game so "Continue" won't offer it.
+    public func discardAutosave() { store?.clearAutosave() }
+
     /// A sensible default slot name, e.g. "Crazyhouse · 12 moves".
     public func defaultSaveName() -> String { "\(variant.name) · \(history.count) moves" }
 
@@ -383,7 +388,7 @@ public final class GameController: ObservableObject {
             async let move: Move? = Task.detached(priority: .userInitiated) {
                 engine.bestMove(in: snapshot)
             }.value
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            try? await Task.sleep(nanoseconds: UInt64.random(in: 900_000_000...2_000_000_000))
             guard let self, let chosen = await move else { self?.thinking = false; return }
             guard self.position == snapshot else { return }   // game reset mid-think
             if hidden { self.announceOpponentMove(chosen) }

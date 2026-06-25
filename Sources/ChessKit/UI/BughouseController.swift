@@ -230,6 +230,10 @@ public final class BughouseController: ObservableObject {
                             baseTime: baseTime, increment: increment, clocks: clock)
     }
     public func saveSlot(name: String) { store?.save(toSave(name: name)) }
+    /// Forget the in-progress match so "Continue" won't offer it.
+    public func discardAutosave() { store?.setAutosave(nil) }
+    /// Worth offering to save? (has moves and isn't finished)
+    public var isResumable: Bool { !moveLog.isEmpty && !status.isOver }
     private func autosave() {
         guard let store else { return }
         if status.isOver || moveLog.isEmpty { store.setAutosave(nil) }
@@ -391,15 +395,20 @@ public final class BughouseController: ObservableObject {
         let req = botRequest[seat(board: b, color: snapshot.sideToMove)]
         let engine = SearchEngine(variant: rules, difficulty: diff)
         let rules = self.rules
+        let talkSeat = seat(board: b, color: snapshot.sideToMove)
         aiTasks[b] = Task { [weak self] in
             async let best: Move? = Task.detached(priority: .userInitiated) {
                 BughouseController.pickMove(rules: rules, engine: engine, pos: snapshot, request: req)
             }.value
-            try? await Task.sleep(nanoseconds: 450_000_000)
+            // Play at a human-ish pace (not instant), varied so the two boards don't move in lockstep.
+            try? await Task.sleep(nanoseconds: UInt64.random(in: 1_200_000_000...2_800_000_000))
             guard let self else { return }
             guard self.boards[b].pos == snapshot, !self.status.isOver else { self.thinking[b] = false; return }
             self.thinking[b] = false
-            if let m = await best { self.apply(b, m) }
+            if let m = await best {
+                self.apply(b, m)
+                if Int.random(in: 0..<100) < 22 { self.botTalk(seat: talkSeat) }   // coach the partner
+            }
         }
     }
 
@@ -431,6 +440,24 @@ public final class BughouseController: ObservableObject {
             break
         }
         return engine.bestMove(in: pos)
+    }
+
+    /// A bot calls out to its partner to coordinate — ask for a piece, tell them to sit when in
+    /// danger, or go when pressing. (Sets the partner's bias if the partner is also a computer.)
+    private func botTalk(seat: BughouseSeat) {
+        guard !status.isOver else { return }
+        let pos = boards[seat.board].pos
+        let phrase: Phrase
+        if pos.inCheck(seat.color) {
+            phrase = BughouseController.phrases.first { $0.bias == .sit }!          // "Sit" — don't feed my opponent
+        } else if Int.random(in: 0..<100) < 25 {
+            phrase = BughouseController.phrases.first { $0.bias == .go }!           // "Go" — trade & feed me
+        } else {
+            let wants: [PieceKind] = [.knight, .bishop, .rook, .queen]
+            let k = wants.randomElement()!
+            phrase = BughouseController.phrases.first { $0.bias == .need(k) }!      // "+N" etc.
+        }
+        say(phrase, from: seat)
     }
 
     // MARK: Partner comms

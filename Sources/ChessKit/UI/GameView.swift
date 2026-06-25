@@ -12,6 +12,7 @@ public struct ChessGameView: View {
     @State private var showNewGame = false
     @State private var showSave = false
     @State private var showMore = false
+    @State private var showQuit = false
     @State private var saveName = ""
     /// Nearby transport (only set in `.nearby` mode); wired to the controller on appear.
     private let nearby: NearbyService?
@@ -93,6 +94,11 @@ public struct ChessGameView: View {
             Button("Save") { game.saveSlot(name: saveName.isEmpty ? game.defaultSaveName() : saveName) }
             Button("Cancel", role: .cancel) {}
         } message: { Text("Save this game so you can resume it later.") }
+        .confirmationDialog("Leave this game?", isPresented: $showQuit, titleVisibility: .visible) {
+            Button("Save & Quit") { game.saveSlot(name: game.defaultSaveName()); game.recordToHistory(); onExit?() }
+            Button("Quit Without Saving", role: .destructive) { game.discardAutosave(); onExit?() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Your game is in progress. Save it to resume later from Load Game.") }
         .sheet(isPresented: $showMore) { MoreGamesView(currentAppStoreID: brand.appStoreID, brand: brand) }
         .tint(brand.accent)
         .onAppear {
@@ -110,7 +116,9 @@ public struct ChessGameView: View {
     private var header: some View {
         HStack(spacing: 10) {
             if let onExit {
-                Button { game.recordToHistory(); onExit() } label: {
+                Button {
+                    if game.isResumable { showQuit = true } else { game.recordToHistory(); onExit() }
+                } label: {
                     Image(systemName: "chevron.left").font(.title3.weight(.semibold))
                 }
             }

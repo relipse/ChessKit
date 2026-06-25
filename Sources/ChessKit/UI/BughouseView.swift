@@ -315,9 +315,14 @@ public struct BughouseSetupView: View {
     }
     private func teamCard(_ title: String, seats: [BughouseSeat]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(title).font(.headline).foregroundStyle(brand.accent)
+            HStack(spacing: 6) {
+                Text(title).font(.headline).foregroundStyle(brand.accent)
+                Text("· partners, opposite colours").font(.caption2).foregroundStyle(.secondary)
+            }
             ForEach(seats) { s in
-                HStack {
+                HStack(spacing: 8) {
+                    Circle().fill(s.color == .white ? Color.white : Color.black)
+                        .frame(width: 14, height: 14).overlay(Circle().strokeBorder(.gray, lineWidth: 1))
                     Text(s.label); Spacer()
                     Picker("", selection: Binding(get: { human[s.rawValue] }, set: { human[s.rawValue] = $0 })) {
                         Text("Human").tag(true); Text("Computer").tag(false)
@@ -343,6 +348,7 @@ public struct BughouseGameView: View {
     @State private var saveName = ""
     @State private var focusMine = false
     @State private var showChat = false
+    @State private var showQuit = false
     @AppStorage("bug.board1Theme") private var board1Theme = "brown"
     @AppStorage("bug.board2Theme") private var board2Theme = "green"
     private let overhead: CGFloat = 132   // two reserves + two clock rows + turn line
@@ -371,8 +377,15 @@ public struct BughouseGameView: View {
             Button("Save") { game.saveSlot(name: saveName.isEmpty ? "Bughouse · \(game.moveLog.count) moves" : saveName) }
             Button("Cancel", role: .cancel) {}
         }
+        .confirmationDialog("Leave this match?", isPresented: $showQuit, titleVisibility: .visible) {
+            Button("Save & Quit") { game.saveSlot(name: "Bughouse · \(game.moveLog.count) moves"); onExit() }
+            Button("Quit Without Saving", role: .destructive) { game.discardAutosave(); onExit() }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("Your match is in progress. Save it to resume later from Load Match.") }
         .sheet(isPresented: $showChat) { chatLog }
     }
+
+    private func backTapped() { if game.isResumable { showQuit = true } else { onExit() } }
 
     private func theme(_ b: Int) -> BoardTheme { BoardTheme.theme(id: b == 0 ? board1Theme : board2Theme) }
 
@@ -398,7 +411,7 @@ public struct BughouseGameView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Button { onExit() } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
+            Button { backTapped() } label: { Image(systemName: "chevron.left").font(.title3.weight(.semibold)) }
             Text("Bughouse").font(.title3.weight(.bold).width(.condensed))
             Spacer()
             if game.hasHuman {
