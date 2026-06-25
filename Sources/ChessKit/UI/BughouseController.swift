@@ -364,13 +364,42 @@ public final class BughouseController: ObservableObject {
     public var myBoard: Int { primaryHumanSeat?.board ?? 0 }
     public var hasHuman: Bool { primaryHumanSeat != nil }
 
-    /// Send a quick command to your partner; if the partner is a computer it adjusts their play.
-    public func sendCommand(_ cmd: PartnerCommand) {
-        guard let me = primaryHumanSeat else { return }
-        let mate = partner(of: me)
-        chat.append("You: \(cmd.label)")
-        if chat.count > 12 { chat.removeFirst(chat.count - 12) }
-        if case .computer = seats[mate] { botRequest[mate] = cmd }
+    /// A predefined bughouse phrase — public chat, optionally nudging a computer partner.
+    public struct Phrase: Identifiable, Sendable {
+        public let id: Int
+        public let text: String
+        let bias: PartnerCommand?
+    }
+
+    /// The bughouse-lingo quick phrases everyone can say.
+    public static let phrases: [Phrase] = [
+        .init(id: 0, text: "Send me a pawn!",   bias: .need(.pawn)),
+        .init(id: 1, text: "Send me a knight!", bias: .need(.knight)),
+        .init(id: 2, text: "Send me a bishop!", bias: .need(.bishop)),
+        .init(id: 3, text: "Send me a rook!",   bias: .need(.rook)),
+        .init(id: 4, text: "Send me a queen!",  bias: .need(.queen)),
+        .init(id: 5, text: "Sit! Don't trade.", bias: .sit),
+        .init(id: 6, text: "Go! Feed me pieces.", bias: .go),
+        .init(id: 7, text: "Trade everything!", bias: .go),
+        .init(id: 8, text: "Hold — I'm getting mated!", bias: .sit),
+        .init(id: 9, text: "Mate coming — stall!", bias: .sit),
+        .init(id: 10, text: "Need a piece for mate!", bias: nil),
+        .init(id: 11, text: "Watch the back rank!", bias: nil),
+        .init(id: 12, text: "Nice!", bias: nil),
+        .init(id: 13, text: "Hurry!", bias: nil),
+    ]
+
+    /// Say a phrase out loud (everyone sees it). If it carries a request and the speaker's
+    /// partner is a computer, it nudges that bot's play.
+    public func say(_ phrase: Phrase, from seat: BughouseSeat? = nil) {
+        let speaker = seat ?? primaryHumanSeat ?? .b1White
+        let who = (speaker == primaryHumanSeat) ? "You" : speaker.label
+        chat.append("\(who): \(phrase.text)")
+        if chat.count > 30 { chat.removeFirst(chat.count - 30) }
+        if let bias = phrase.bias {
+            let mate = partner(of: speaker)
+            if case .computer = seats[mate] { botRequest[mate] = bias }
+        }
     }
 
     public var resultText: String {

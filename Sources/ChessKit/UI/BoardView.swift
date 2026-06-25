@@ -15,6 +15,8 @@ public struct BoardView: View {
     /// Pieces of this colour are hidden from view (fog of war). nil → show everything.
     public var hiddenColor: PieceColor?
     public var size: CGFloat
+    /// Optional per-board colour scheme override (used by Bughouse to give each board its own look).
+    public var boardTheme: BoardTheme?
     public var onTap: ((Int) -> Void)?
     /// Called when a piece is dragged from one square and dropped on another.
     public var onMove: ((Int, Int) -> Void)?
@@ -32,7 +34,7 @@ public struct BoardView: View {
                 lastMove: (from: Int, to: Int)? = nil, selected: Int? = nil,
                 targets: Set<Int> = [], hintSquares: Set<Int> = [], checkSquare: Int? = nil,
                 hiddenColor: PieceColor? = nil,
-                size: CGFloat, appearance: Appearance = .shared,
+                size: CGFloat, boardTheme: BoardTheme? = nil, appearance: Appearance = .shared,
                 onTap: ((Int) -> Void)? = nil, onMove: ((Int, Int) -> Void)? = nil,
                 onDropPiece: ((PieceKind, Int) -> Void)? = nil) {
         self.position = position
@@ -44,6 +46,7 @@ public struct BoardView: View {
         self.checkSquare = checkSquare
         self.hiddenColor = hiddenColor
         self.size = size
+        self.boardTheme = boardTheme
         self.appearance = appearance
         self.onTap = onTap
         self.onMove = onMove
@@ -61,9 +64,10 @@ public struct BoardView: View {
         return rank * 8 + file
     }
 
-    private var light: Color { appearance.theme.light }
-    private var dark: Color { appearance.theme.dark }
-    private var highlight: Color { appearance.theme.highlight }
+    private var scheme: BoardTheme { boardTheme ?? appearance.theme }
+    private var light: Color { scheme.light }
+    private var dark: Color { scheme.dark }
+    private var highlight: Color { scheme.highlight }
 
     public var body: some View {
         let sq = size / 8
