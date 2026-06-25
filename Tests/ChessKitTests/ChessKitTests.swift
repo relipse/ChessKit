@@ -213,6 +213,14 @@ final class ChessKitTests: XCTestCase {
         XCTAssertEqual(back.startFEN, saved.startFEN)
     }
 
+    func testLosersBareKingWins() {
+        let v = LosersChess()
+        // White has only a king; Black has king + rook. White (lone king) should win.
+        let pos = Position(fen: "7k/8/8/8/8/8/8/r6K w - - 0 1")!
+        if case .variantWin(let w, _) = v.status(pos) { XCTAssertEqual(w, .white) }
+        else { XCTFail("lone-king side should win in Losers") }
+    }
+
     func testPawnDuelStartAndPlay() {
         let v = PawnDuelChess()
         let pos = v.startPosition()

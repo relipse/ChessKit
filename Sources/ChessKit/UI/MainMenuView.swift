@@ -354,8 +354,26 @@ struct RulesView: View {
                     "Both sides start with the same shuffled position.",
                     "Castling still lands the king on g/c and rook on f/d.",
                     "Otherwise it's completely standard chess."]
+        case "Losers":
+            return ["The goal is inverted — you WIN by getting checkmated.",
+                    "You ALSO win if you lose all your pieces (only your king left).",
+                    "If you can capture, you must — so force your opponent to take your army.",
+                    "A backwards race: shed your pieces faster than your opponent does."]
+        case "Shapeshifter":
+            return ["Every non-pawn piece moves by the FILE it stands on, and its powers change as it moves.",
+                    "a/h files move like rooks, b/g like knights, c/f like bishops.",
+                    "d-file pieces move like a queen; e-file like a king (one step).",
+                    "Pawns are normal. Checkmate the king to win."]
+        case "Pawn Duel":
+            return ["Each side starts with just a king and three pawns in opposite corners.",
+                    "Ordinary chess rules apply.",
+                    "Race a pawn to the far side to promote, then hunt the enemy king.",
+                    "Checkmate to win."]
         default:
-            return ["Standard chess rules. Checkmate the king to win."]
+            return ["Standard chess — move your pieces to checkmate the enemy king.",
+                    "Each piece moves its own way; pawns promote on the last rank.",
+                    "Castle, capture en passant, and avoid stalemate.",
+                    "Beat the computer across 10 difficulty levels."]
         }
     }
 }

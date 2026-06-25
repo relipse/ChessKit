@@ -6,7 +6,7 @@ import Foundation
 public struct LosersChess: ChessVariant {
     public init() {}
     public var name: String { "Losers" }
-    public var blurb: String { "Get checkmated to win — and if you can capture, you must." }
+    public var blurb: String { "Win by getting checkmated OR by losing all your pieces (just your king left). If you can capture, you must." }
 
     public func legalMoves(_ pos: Position) -> [Move] {
         let legal = StandardChess.legalStandardMoves(pos)
@@ -19,6 +19,9 @@ public struct LosersChess: ChessVariant {
     }
 
     public func status(_ pos: Position) -> GameStatus {
+        // Lose all your pieces down to a lone king → you win.
+        if bareKing(.white, pos) { return .variantWin(winner: .white, reason: "lost all pieces — you win!") }
+        if bareKing(.black, pos) { return .variantWin(winner: .black, reason: "lost all pieces — you win!") }
         if legalMoves(pos).isEmpty {
             // Inverted: the player who is checkmated WINS.
             if pos.inCheck(pos.sideToMove) { return .variantWin(winner: pos.sideToMove, reason: "checkmated — you win!") }
@@ -26,6 +29,15 @@ public struct LosersChess: ChessVariant {
         }
         if pos.halfmoveClock >= 100 { return .draw(reason: "50-move rule") }
         return .ongoing
+    }
+
+    /// True if `color` has only a king left (all other pieces captured).
+    func bareKing(_ color: PieceColor, _ pos: Position) -> Bool {
+        var hasKing = false, hasOther = false
+        for p in pos.squares.compactMap({ $0 }) where p.color == color {
+            if p.kind == .king { hasKing = true } else { hasOther = true }
+        }
+        return hasKing && !hasOther
     }
 
     /// Inverted evaluation: shedding material and getting mated is *good*.
