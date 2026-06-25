@@ -114,8 +114,11 @@ public struct MainMenuView: View {
                 }
                 .frame(maxWidth: 420)
                 Spacer()
-                Text("vs Computer · Offline · Kinsman Software LLC")
-                    .font(.footnote).foregroundStyle(.secondary)
+                VStack(spacing: 2) {
+                    Text("vs Computer · Offline · Kinsman Software LLC")
+                        .font(.footnote).foregroundStyle(.secondary)
+                    Text(MainMenuView.appVersion).font(.caption2).foregroundStyle(.tertiary)
+                }
             }
             .padding(.horizontal, 24)
         }
@@ -154,6 +157,13 @@ public struct MainMenuView: View {
                 .font(.subheadline).foregroundStyle(.secondary)
                 .multilineTextAlignment(.center).padding(.horizontal, 12)
         }
+    }
+
+    /// App version + build from the bundle, shown at the bottom of the menu.
+    static var appVersion: String {
+        let v = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let b = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "Version \(v) (\(b))"
     }
 
     /// Count launches; on the 10th, ask the system to show the rating prompt once.
