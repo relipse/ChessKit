@@ -53,15 +53,22 @@ public struct ChessRootView: View {
     }
 
     public var body: some View {
-        SplashGate(brand: brand) {
-            MainMenuView(variant: variant, brand: brand, store: store, appearance: appearance,
-                         onLaunch: { launch = $0 })
-            .gameCover(item: $launch) { l in
-                ChessGameView(variant: variant, brand: brand, appearance: appearance,
-                              suite: suite, store: store, launch: l,
-                              onExit: { launch = nil })
+        if UserDefaults.standard.string(forKey: "shot") == "game" {
+            // App Store screenshot mode: boot straight into a lively mid-game board.
+            ChessGameView(variant: variant, brand: brand, appearance: appearance, suite: suite,
+                          store: store, launch: .restore(DemoGame.savedGame(for: variant)))
+                .tint(brand.accent)
+        } else {
+            SplashGate(brand: brand) {
+                MainMenuView(variant: variant, brand: brand, store: store, appearance: appearance,
+                             onLaunch: { launch = $0 })
+                .gameCover(item: $launch) { l in
+                    ChessGameView(variant: variant, brand: brand, appearance: appearance,
+                                  suite: suite, store: store, launch: l,
+                                  onExit: { launch = nil })
+                }
+                .tint(brand.accent)
             }
-            .tint(brand.accent)
         }
     }
 }
