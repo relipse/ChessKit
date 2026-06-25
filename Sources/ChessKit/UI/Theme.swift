@@ -10,15 +10,31 @@ public struct Brand: Sendable {
     public var appStoreID: String?
     /// Game Center leaderboard ID for wins (configured in App Store Connect).
     public var leaderboardID: String?
+    /// Online play (Internet Game). `onlineSlug` keys the per-game product IDs; `onlineAllSlug`
+    /// keys the all-access product IDs (usually the same; Bughouse's all-access uses "chess").
+    public var onlineSlug: String?
+    public var onlineAllSlug: String?
 
     public init(accent: Color, title: String, systemImage: String = "crown.fill",
-                leaderboardID: String? = nil, appStoreID: String? = nil) {
+                leaderboardID: String? = nil, appStoreID: String? = nil,
+                onlineSlug: String? = nil, onlineAllSlug: String? = nil) {
         self.accent = accent
         self.title = title
         self.systemImage = systemImage
         self.appStoreID = appStoreID
         self.leaderboardID = leaderboardID
+        self.onlineSlug = onlineSlug
+        self.onlineAllSlug = onlineAllSlug ?? onlineSlug
     }
+
+    /// The four subscription product IDs for this app (all-access mo/yr, this-game mo/yr).
+    public var onlineProductIDs: [String] {
+        guard let s = onlineSlug else { return [] }
+        let a = onlineAllSlug ?? s
+        return ["cc.kinsman.\(a).all.monthly", "cc.kinsman.\(a).all.yearly",
+                "cc.kinsman.\(s).game.monthly", "cc.kinsman.\(s).game.yearly"]
+    }
+    public var onlineGameKey: String { onlineSlug ?? "standard" }
     public static let standard = Brand(accent: Color(red: 0.55, green: 0.36, blue: 0.20), title: "Chess")
 
     /// Title for headings — avoids "Chess Chess" when the variant title already says "Chess".

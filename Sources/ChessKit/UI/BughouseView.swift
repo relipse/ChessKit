@@ -75,6 +75,7 @@ struct BughouseMenuView: View {
     @State private var showSetup = false
     @State private var showLoad = false
     @State private var showMore = false
+    @State private var showOnline = false
     @State private var showRules = false
     @State private var showAppearance = false
     @State private var showAbout = false
@@ -101,6 +102,7 @@ struct BughouseMenuView: View {
                     }
                     btn("New Match", "plus.circle.fill", prominent: store.autosave == nil) { showSetup = true }
                     if !store.slots.isEmpty { btn("Load Match", "tray.full.fill") { showLoad = true } }
+                    if brand.onlineSlug != nil { btn("Internet Game", "globe") { showOnline = true } }
                     btn("How to Play", "book.fill") { showRules = true }
                     btn("Appearance", "paintpalette.fill") { showAppearance = true }
                     HStack(spacing: 12) {
@@ -130,6 +132,7 @@ struct BughouseMenuView: View {
         }
         .sheet(isPresented: $showLoad) { BughouseLoadView(brand: brand, store: store) { onResume($0) } }
         .sheet(isPresented: $showMore) { MoreGamesView(currentAppStoreID: brand.appStoreID, brand: brand) }
+        .sheet(isPresented: $showOnline) { InternetGameView(brand: brand) }
         .sheet(isPresented: $showRules) { BughouseRulesView(brand: brand) }
         .sheet(isPresented: $showAppearance) { BughouseAppearanceView(brand: brand, appearance: appearance) }
         .sheet(isPresented: $showAbout) { AboutView(brand: brand) }

@@ -88,6 +88,7 @@ public struct MainMenuView: View {
     @State private var showAbout = false
     @State private var showMore = false
     @State private var showNearby = false
+    @State private var showOnline = false
     @State private var showSetup = false
     @State private var showPieceSetup = false
     @Environment(\.requestReview) private var requestReview
@@ -118,6 +119,9 @@ public struct MainMenuView: View {
                         menuButton("Set Up Pieces", systemImage: "square.grid.3x3.square") { showPieceSetup = true }
                     }
                     menuButton("Play Nearby", systemImage: "wifi") { showNearby = true }
+                    if brand.onlineSlug != nil {
+                        menuButton("Internet Game", systemImage: "globe") { showOnline = true }
+                    }
                     if !store.slots.isEmpty {
                         menuButton("Load Game", systemImage: "tray.full.fill") { showLoad = true }
                     }
@@ -163,6 +167,7 @@ public struct MainMenuView: View {
         .sheet(isPresented: $showNearby) {
             NearbyLobbyView(variant: variant, brand: brand, appearance: appearance, store: store)
         }
+        .sheet(isPresented: $showOnline) { InternetGameView(brand: brand) }
         .sheet(isPresented: $showSetup) {
             Chess960SetupView(brand: brand, store: store, appearance: appearance) { pos, mode in
                 onLaunch(.fresh(mode: mode, humanColor: .white, difficulty: .medium, start: pos))
