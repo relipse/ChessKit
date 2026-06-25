@@ -11,15 +11,24 @@ extension View {
         self.sheet(item: item, content: content)
         #endif
     }
+
+    @ViewBuilder func gameCover<Content: View>(
+        isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View {
+        #if os(iOS)
+        self.fullScreenCover(isPresented: isPresented, content: content)
+        #else
+        self.sheet(isPresented: isPresented, content: content)
+        #endif
+    }
 }
 
 /// How a game should be launched from the menu.
 public enum GameLaunch: Identifiable {
-    case fresh(humanColor: PieceColor, difficulty: Difficulty)
+    case fresh(mode: GameMode, humanColor: PieceColor, difficulty: Difficulty, start: Position? = nil)
     case restore(SavedGame)
     public var id: String {
         switch self {
-        case .fresh(let c, let d): return "fresh-\(c)-\(d.level)"
+        case .fresh(let m, let c, let d, let s): return "fresh-\(m.rawValue)-\(c)-\(d.level)-\(s?.fen() ?? "")"
         case .restore(let g): return "restore-\(g.id)"
         }
     }
@@ -71,6 +80,8 @@ public struct MainMenuView: View {
     @State private var showHistory = false
     @State private var showAbout = false
     @State private var showMore = false
+    @State private var showNearby = false
+    @State private var showSetup = false
     @Environment(\.requestReview) private var requestReview
     @AppStorage("ck.launchCount") private var launchCount = 0
     @AppStorage("ck.didPromptReview") private var didPromptReview = false
@@ -92,6 +103,10 @@ public struct MainMenuView: View {
                     }
                     menuButton("New Game", systemImage: "plus.circle.fill",
                                prominent: store.autosave == nil) { showNewGame = true }
+                    if variant is Chess960 {
+                        menuButton("Set Up Position", systemImage: "slider.horizontal.below.square.filled.and.square") { showSetup = true }
+                    }
+                    menuButton("Play Nearby", systemImage: "wifi") { showNearby = true }
                     if !store.slots.isEmpty {
                         menuButton("Load Game", systemImage: "tray.full.fill") { showLoad = true }
                     }
@@ -129,9 +144,17 @@ public struct MainMenuView: View {
             GameCenter.shared.authenticate()
         }
         .sheet(isPresented: $showNewGame) {
-            NewGameOptionsView(variant: variant, brand: brand, appearance: appearance) { color, diff in
+            NewGameOptionsView(variant: variant, brand: brand, appearance: appearance) { mode, color, diff in
                 showNewGame = false
-                onLaunch(.fresh(humanColor: color, difficulty: diff))
+                onLaunch(.fresh(mode: mode, humanColor: color, difficulty: diff))
+            }
+        }
+        .sheet(isPresented: $showNearby) {
+            NearbyLobbyView(variant: variant, brand: brand, appearance: appearance, store: store)
+        }
+        .sheet(isPresented: $showSetup) {
+            Chess960SetupView(brand: brand, store: store, appearance: appearance) { pos, mode in
+                onLaunch(.fresh(mode: mode, humanColor: .white, difficulty: .medium, start: pos))
             }
         }
         .sheet(isPresented: $showLoad) {
@@ -203,28 +226,41 @@ public struct MainMenuView: View {
     }
 }
 
-/// Pick side + difficulty for a new game.
+/// Pick mode + side + difficulty for a new game.
 struct NewGameOptionsView: View {
     let variant: ChessVariant
     let brand: Brand
     @ObservedObject var appearance: Appearance
-    let onStart: (PieceColor, Difficulty) -> Void
+    let onStart: (GameMode, PieceColor, Difficulty) -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var mode: GameMode = .computer
     @State private var color: PieceColor = .white
     @State private var difficulty: Difficulty = .medium
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Play as") {
-                    Picker("Side", selection: $color) {
-                        Text("White").tag(PieceColor.white)
-                        Text("Black").tag(PieceColor.black)
+                Section("Opponent") {
+                    Picker("Mode", selection: $mode) {
+                        Text("Computer").tag(GameMode.computer)
+                        Text("2 Players").tag(GameMode.passAndPlay)
                     }.pickerStyle(.segmented)
+                    if mode == .passAndPlay {
+                        Text("Two players take turns on this device.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 }
-                Section("Difficulty") { DifficultyPicker(difficulty: $difficulty) }
+                if mode == .computer {
+                    Section("Play as") {
+                        Picker("Side", selection: $color) {
+                            Text("White").tag(PieceColor.white)
+                            Text("Black").tag(PieceColor.black)
+                        }.pickerStyle(.segmented)
+                    }
+                    Section("Difficulty") { DifficultyPicker(difficulty: $difficulty) }
+                }
                 Section {
-                    Button { onStart(color, difficulty); dismiss() } label: {
+                    Button { onStart(mode, color, difficulty); dismiss() } label: {
                         Text("Start").frame(maxWidth: .infinity).font(.headline)
                     }.buttonStyle(.borderedProminent)
                 }

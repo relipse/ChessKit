@@ -15,15 +15,19 @@ public struct SavedGame: Codable, Identifiable, Sendable {
     public var difficulty: Difficulty
     /// Final result text, set when a game is recorded into history ("" if still in progress).
     public var result: String?
+    /// How the game was played (defaults to vs-computer for older saves).
+    public var mode: GameMode?
     /// Move count, for menu display ("12 moves").
     public var plyCount: Int { moves.count }
 
     public init(id: UUID = UUID(), name: String, date: Date, variantName: String,
                 startFEN: String, rookFiles: [String: Int], moves: [Move],
-                humanColor: PieceColor, difficulty: Difficulty, result: String? = nil) {
+                humanColor: PieceColor, difficulty: Difficulty, result: String? = nil,
+                mode: GameMode? = nil) {
         self.id = id; self.name = name; self.date = date; self.variantName = variantName
         self.startFEN = startFEN; self.rookFiles = rookFiles; self.moves = moves
         self.humanColor = humanColor; self.difficulty = difficulty; self.result = result
+        self.mode = mode
     }
 
     /// Rebuild the starting position (restoring Chess960 rook files).
@@ -53,6 +57,7 @@ public final class GameStore: ObservableObject {
             ?? FileManager.default.temporaryDirectory
         self.fileURL = dir.appendingPathComponent(filename)
         load()
+        loadFavorites()
     }
 
     private struct Disk: Codable { var autosave: SavedGame?; var slots: [SavedGame]; var history: [SavedGame]? }
@@ -83,6 +88,28 @@ public final class GameStore: ObservableObject {
     public func deleteHistory(_ game: SavedGame) {
         history.removeAll { $0.id == game.id }
         persist()
+    }
+
+    // MARK: Favorite Chess960 starting positions
+
+    @Published public private(set) var favoritePositions: [Int] = []
+
+    public func toggleFavorite(_ id: Int) {
+        if let i = favoritePositions.firstIndex(of: id) { favoritePositions.remove(at: i) }
+        else { favoritePositions.insert(id, at: 0) }
+        persistFavorites()
+    }
+    public func isFavorite(_ id: Int) -> Bool { favoritePositions.contains(id) }
+
+    private var favoritesURL: URL {
+        fileURL.deletingLastPathComponent().appendingPathComponent("ck_fav_positions.json")
+    }
+    private func persistFavorites() {
+        if let data = try? JSONEncoder().encode(favoritePositions) { try? data.write(to: favoritesURL) }
+    }
+    private func loadFavorites() {
+        if let data = try? Data(contentsOf: favoritesURL),
+           let ids = try? JSONDecoder().decode([Int].self, from: data) { favoritePositions = ids }
     }
 
     public func setAutosave(_ game: SavedGame?) { autosave = game; persist() }

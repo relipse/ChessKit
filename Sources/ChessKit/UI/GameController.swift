@@ -1,10 +1,23 @@
 import SwiftUI
 
-/// Drives a human-vs-computer game of any `ChessVariant`. Owns the position, move
-/// history, selection state, the AI opponent, and (for Kriegspiel) the referee.
+/// How a game is being played.
+public enum GameMode: String, Codable, Sendable {
+    case computer      // one human vs the built-in AI
+    case passAndPlay   // two humans sharing one device
+    case nearby        // two humans on two nearby devices (MultipeerConnectivity)
+}
+
+/// Drives a game of any `ChessVariant` — vs the computer, pass-and-play, or nearby.
+/// Owns the position, move history, selection state, the AI opponent, and (for
+/// vs-computer Kriegspiel) the referee/fog of war.
 @MainActor
 public final class GameController: ObservableObject {
     public let variant: ChessVariant
+    public let mode: GameMode
+    /// In `.nearby`, the colour this device controls.
+    public var localColor: PieceColor
+    /// In `.nearby`, called after a local move so the transport can send it to the peer.
+    public var onLocalMove: ((Move) -> Void)?
 
     @Published public private(set) var position: Position
     @Published public private(set) var history: [Move] = []
@@ -18,7 +31,15 @@ public final class GameController: ObservableObject {
     @Published public var difficulty: Difficulty {
         didSet { defaults.set(difficulty.level, forKey: "ck.difficultyLevel") }
     }
-    public var flipped: Bool { humanColor == .black }
+    public var flipped: Bool {
+        switch mode {
+        case .computer: return humanColor == .black
+        case .nearby: return localColor == .black
+        case .passAndPlay: return position.sideToMove == .black   // rotate to face the mover
+        }
+    }
+    /// Fog of war only applies to vs-computer Kriegspiel (two-device/hot-seat can't hide pieces).
+    var useKriegspielFog: Bool { variant.hidesOpponentPieces && mode == .computer }
 
     // Tap-to-move selection state.
     @Published public var selected: Int?
@@ -45,8 +66,11 @@ public final class GameController: ObservableObject {
     public init(variant: ChessVariant, humanColor: PieceColor = .white,
                 difficulty: Difficulty? = nil, suite: String? = nil,
                 store: GameStore? = nil, restore saved: SavedGame? = nil,
-                leaderboardID: String? = nil) {
+                leaderboardID: String? = nil, mode: GameMode = .computer,
+                localColor: PieceColor = .white, startOverride: Position? = nil) {
         self.variant = variant
+        self.mode = saved?.mode ?? mode
+        self.localColor = localColor
         self.leaderboardID = leaderboardID
         let d = suite.flatMap { UserDefaults(suiteName: $0) } ?? .standard
         self.defaults = d
@@ -58,7 +82,7 @@ public final class GameController: ObservableObject {
             ?? .medium
         self.difficulty = diff
         self.humanColor = saved?.humanColor ?? humanColor
-        let start = saved?.startPosition() ?? variant.startPosition()
+        let start = saved?.startPosition() ?? startOverride ?? variant.startPosition()
         self.initialPosition = start
         self.position = start
         self.engine = SearchEngine(variant: variant, difficulty: diff)
@@ -79,9 +103,17 @@ public final class GameController: ObservableObject {
         if !status.isOver, position.sideToMove != humanColor { maybeStartAI() }
     }
 
-    public var isHumanTurn: Bool { position.sideToMove == humanColor && !status.isOver }
+    /// Whether the local user may move right now (the side they control is to move).
+    public var isHumanTurn: Bool {
+        guard !status.isOver else { return false }
+        switch mode {
+        case .computer: return position.sideToMove == humanColor
+        case .nearby: return position.sideToMove == localColor
+        case .passAndPlay: return true
+        }
+    }
     public var checkSquare: Int? {
-        guard !variant.hidesOpponentPieces else { return nil }
+        guard !useKriegspielFog else { return nil }
         let stm = position.sideToMove
         return position.inCheck(stm) ? position.kingSquare(stm) : nil
     }
@@ -111,7 +143,7 @@ public final class GameController: ObservableObject {
         return SavedGame(id: gameID, name: name, date: savedDate(), variantName: variant.name,
                          startFEN: initialPosition.fen(), rookFiles: rookFiles,
                          moves: history, humanColor: humanColor, difficulty: difficulty,
-                         result: status.isOver ? resultText : nil)
+                         result: status.isOver ? resultText : nil, mode: mode)
     }
 
     /// Log the current game into the replayable history (call on game over or when leaving).
@@ -161,13 +193,12 @@ public final class GameController: ObservableObject {
                 return
             }
         }
-        // Select one of the human's own pieces.
-        if let p = position.squares[sq], p.color == humanColor {
+        // Select one of the side-to-move's own pieces.
+        if let p = position.squares[sq], p.color == position.sideToMove {
             selected = sq
             pocketSelection = nil
-            if variant.hidesOpponentPieces {
-                // Kriegspiel: the player can't see the enemy, so offer every pseudo-legal
-                // destination — the referee decides legality.
+            if useKriegspielFog {
+                // Kriegspiel vs computer: offer every pseudo-legal destination — the referee decides.
                 targets = Set(pseudoDestinations(from: sq))
             } else {
                 let legal = variant.legalMoves(from: sq, in: position)
@@ -202,7 +233,7 @@ public final class GameController: ObservableObject {
         pocketSelection = nil
         if selected != from {
             // Select the origin piece (lights up legal targets) without toggling it off.
-            if let p = position.squares[from], p.color == humanColor { tap(from) }
+            if let p = position.squares[from], p.color == position.sideToMove { tap(from) }
         }
         guard selected == from else { return }
         tap(to)
@@ -211,7 +242,7 @@ public final class GameController: ObservableObject {
     /// Drop an armed pocket piece on `to` (drag from the reserve).
     public func drop(_ kind: PieceKind, to sq: Int) {
         guard isHumanTurn, variant.usesPockets else { return }
-        guard (position.pockets[humanColor]?.count(kind) ?? 0) > 0 else { return }
+        guard (position.pockets[position.sideToMove]?.count(kind) ?? 0) > 0 else { return }
         let move = Move(drop: kind, to: sq)
         if variant.legalDrops(of: kind, in: position).contains(where: { $0.to == sq }) {
             commitHuman(move)
@@ -222,7 +253,7 @@ public final class GameController: ObservableObject {
     /// Arm a pocket piece for dropping (Crazyhouse).
     public func selectPocket(_ kind: PieceKind) {
         guard isHumanTurn, variant.usesPockets else { return }
-        guard (position.pockets[humanColor]?.count(kind) ?? 0) > 0 else { return }
+        guard (position.pockets[position.sideToMove]?.count(kind) ?? 0) > 0 else { return }
         selected = nil
         if pocketSelection == kind { clearSelection(); return }
         pocketSelection = kind
@@ -266,8 +297,8 @@ public final class GameController: ObservableObject {
 
     private func commitHuman(_ rawMove: Move) {
         let move = resolve(rawMove)
-        if variant.hidesOpponentPieces {
-            // Kriegspiel: the referee rules on the attempt; illegal attempts cost no turn.
+        if useKriegspielFog {
+            // Kriegspiel vs computer: the referee rules on the attempt; illegal attempts cost no turn.
             let verdict = referee.adjudicate(move, in: position)
             guard verdict.legal else {
                 lastVerdictIllegal = true
@@ -279,7 +310,20 @@ public final class GameController: ObservableObject {
             guard variant.legalMoves(position).contains(move) else { return }
         }
         apply(move)
-        maybeStartAI()
+        switch mode {
+        case .computer: maybeStartAI()
+        case .nearby: onLocalMove?(move)   // send to the peer
+        case .passAndPlay: break           // the other human moves next on this device
+        }
+    }
+
+    /// Apply a move received from the nearby peer (their turn only).
+    public func applyRemoteMove(_ rawMove: Move) {
+        guard mode == .nearby, !status.isOver, position.sideToMove != localColor else { return }
+        let move = resolve(rawMove)
+        guard variant.legalMoves(position).contains(move) else { return }
+        clearSelection()
+        apply(move)
     }
 
     private func apply(_ move: Move) {
@@ -291,7 +335,7 @@ public final class GameController: ObservableObject {
         autosave()
         if status.isOver {
             recordToHistory()
-            if humanWon {
+            if mode == .computer, humanWon {
                 GameCenter.shared.submitWin(leaderboardID: leaderboardID,
                                             difficulty: difficulty, moves: history.count)
             }
@@ -301,7 +345,7 @@ public final class GameController: ObservableObject {
     // MARK: AI opponent
 
     private func maybeStartAI() {
-        guard !status.isOver, position.sideToMove != humanColor else { return }
+        guard mode == .computer, !status.isOver, position.sideToMove != humanColor else { return }
         thinking = true
         let snapshot = position
         let engine = self.engine
@@ -347,8 +391,9 @@ public final class GameController: ObservableObject {
 
     /// Pseudo-legal destinations from a square ignoring own-king safety (Kriegspiel offers these).
     private func pseudoDestinations(from sq: Int) -> [Int] {
-        guard let p = position.squares[sq], p.color == humanColor else { return [] }
-        var out = position.pseudoTargets(from: sq).filter { position.squares[$0]?.color != humanColor }
+        let me = position.sideToMove
+        guard let p = position.squares[sq], p.color == me else { return [] }
+        var out = position.pseudoTargets(from: sq).filter { position.squares[$0]?.color != me }
         if p.kind == .king { out += StandardRules.castlingMoves(position).filter { $0.from == sq }.map(\.to) }
         return out
     }
@@ -364,4 +409,17 @@ public final class GameController: ObservableObject {
         }
     }
     public var humanWon: Bool { status.winner == humanColor }
+
+    /// The colour to hide on the board (Kriegspiel vs computer only), else nil.
+    public var fogColor: PieceColor? { useKriegspielFog ? humanColor.opposite : nil }
+
+    /// Status-bar label for whose turn it is, mode-aware.
+    public var turnLabel: String {
+        if status.isOver { return "" }
+        switch mode {
+        case .computer: return isHumanTurn ? "YOUR MOVE" : "…"
+        case .passAndPlay: return position.sideToMove == .white ? "WHITE TO MOVE" : "BLACK TO MOVE"
+        case .nearby: return isHumanTurn ? "YOUR MOVE" : "OPPONENT'S MOVE"
+        }
+    }
 }

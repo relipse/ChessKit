@@ -213,6 +213,25 @@ final class ChessKitTests: XCTestCase {
         XCTAssertEqual(back.startFEN, saved.startFEN)
     }
 
+    func testPawnDuelStartAndPlay() {
+        let v = PawnDuelChess()
+        let pos = v.startPosition()
+        XCTAssertEqual(pos.squares["a8".squareIndex!]?.kind, .king)
+        XCTAssertEqual(pos.squares["h1".squareIndex!]?.kind, .king)
+        XCTAssertEqual(pos.squares.compactMap { $0 }.filter { $0.kind == .pawn }.count, 6)
+        XCTAssertFalse(v.legalMoves(pos).isEmpty)
+    }
+
+    @MainActor
+    func testTwoPlayerModeNoAI() {
+        let game = GameController(variant: StandardChess(), mode: .passAndPlay)
+        game.move(from: "e2".squareIndex!, to: "e4".squareIndex!)
+        // In pass-and-play it's immediately Black's (the other human's) turn — no AI took over.
+        XCTAssertEqual(game.position.sideToMove, .black)
+        XCTAssertTrue(game.isHumanTurn)   // the other human can move now
+        XCTAssertEqual(game.sanHistory, ["e4"])
+    }
+
     func testAIPlaysLegalMoves() {
         for v in Variants.all {
             let engine = SearchEngine(variant: v, difficulty: .easy)
