@@ -415,6 +415,29 @@ public struct BughouseGameView: View {
             Button("Cancel", role: .cancel) {}
         } message: { Text("Your match is in progress. Save it to resume later from Load Match.") }
         .sheet(isPresented: $showChat) { chatLog }
+        .overlay { if game.paused { pauseOverlay } }
+    }
+
+    private var pauseOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.72).ignoresSafeArea()
+            VStack(spacing: 14) {
+                Image(systemName: "pause.circle.fill").font(.system(size: 52)).foregroundStyle(.white)
+                Text("Paused").font(.largeTitle.weight(.heavy)).foregroundStyle(.white)
+                Text("All clocks are frozen.").font(.subheadline).foregroundStyle(.white.opacity(0.75))
+                VStack(spacing: 10) {
+                    Button { withAnimation { game.resume() } } label: {
+                        Label("Resume", systemImage: "play.fill").frame(maxWidth: .infinity).padding(.vertical, 12)
+                    }.buttonStyle(.borderedProminent)
+                    Button { game.newGame(); game.resume() } label: {
+                        Label("Restart Match", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity).padding(.vertical, 12)
+                    }.buttonStyle(.bordered).tint(.white)
+                    Button { game.resume(); onExit() } label: {
+                        Label("Back to Lobby / Menu", systemImage: "rectangle.stack").frame(maxWidth: .infinity).padding(.vertical, 12)
+                    }.buttonStyle(.bordered).tint(.white)
+                }.frame(maxWidth: 320)
+            }.padding(28)
+        }.transition(.opacity)
     }
 
     private func backTapped() { if game.isResumable { showQuit = true } else { onExit() } }
@@ -461,6 +484,9 @@ public struct BughouseGameView: View {
                     Image(systemName: focusMine ? "rectangle.split.2x1" : "rectangle.split.2x1.fill").font(.title3)
                 }
                 Button { showChat = true } label: { Image(systemName: "bubble.left.and.bubble.right").font(.title3) }
+            }
+            if game.role != .client, !game.status.isOver {
+                Button { withAnimation { game.pause() } } label: { Image(systemName: "pause.circle").font(.title3) }
             }
             Button { saveName = "Bughouse · \(game.moveLog.count) moves"; showSave = true } label: {
                 Image(systemName: "square.and.arrow.down").font(.title3)

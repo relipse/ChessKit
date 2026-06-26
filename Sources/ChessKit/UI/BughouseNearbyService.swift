@@ -42,6 +42,24 @@ public final class BughouseNearbyService: NSObject, ObservableObject, BughouseNe
     public func reopenSeat(_ seat: BughouseSeat) {
         if case .computer = hostPlan[seat.rawValue] { hostPlan[seat.rawValue] = nil; planVersion += 1 }
     }
+    /// Host: swap the two seats' occupants (you / a joiner / a bot / empty), re-syncing any
+    /// affected joiner to its new seat so the host can arrange the table freely.
+    public func swapSeats(_ a: BughouseSeat, _ b: BughouseSeat) {
+        guard a != b else { return }
+        hostPlan.swapAt(a.rawValue, b.rawValue)
+        let aPeers = peerSeat.filter { $0.value == a }.map(\.key)
+        let bPeers = peerSeat.filter { $0.value == b }.map(\.key)
+        for p in aPeers { peerSeat[p] = b }
+        for p in bPeers { peerSeat[p] = a }
+        for p in (aPeers + bPeers) {
+            if let newSeat = peerSeat[p] {
+                send(BugPacket(kind: .assign, seat: newSeat.rawValue, seatLevels: seatLevels(),
+                               baseTime: baseTime, increment: increment), to: p)
+            }
+        }
+        lobbyPeers = peerSeat.map { "\($0.value.label) — \($0.key.displayName)" }
+        planVersion += 1
+    }
 
     /// Host seat plan: per seat, nil = open for a nearby player, .human = the host, .computer = bot.
     public var hostPlan: [SeatPlayer?] = [.human, nil, nil, .computer(.medium)]
@@ -275,6 +293,17 @@ struct BughouseNearbyLobby: View {
     @ViewBuilder private var hostSection: some View {
         if service.phase == .hostLobby {
             Section {
+                HStack(spacing: 10) {
+                    Image(systemName: "dot.radiowaves.left.and.right")
+                        .font(.title2).foregroundStyle(brand.accent).symbolEffect(.variableColor.iterative)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Scanning room…").font(.headline)
+                        Text("Open on Wi-Fi — nearby players can join.").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                }
+            }
+            Section {
                 if service.humansWaiting > 0 {
                     Label("Waiting for \(service.humansWaiting) more player\(service.humansWaiting == 1 ? "" : "s") to join…",
                           systemImage: "person.2.wave.2.fill").foregroundStyle(brand.accent)
@@ -284,7 +313,13 @@ struct BughouseNearbyLobby: View {
                 Text("Your game is open on Wi-Fi — a friend taps Join Nearby to grab a seat. Impatient? Tap “Add bot” on any waiting seat.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("Seats") { ForEach(BughouseSeat.allCases) { seatRow($0) } }
+            Section("The table") {
+                Text("Partners sit across both boards (same team). The two players on one board are opponents.")
+                    .font(.caption2).foregroundStyle(.secondary)
+                HStack { Spacer(); Text("Board 1").font(.caption2.weight(.bold)).foregroundStyle(.secondary); Spacer(); Spacer(); Text("Board 2").font(.caption2.weight(.bold)).foregroundStyle(.secondary); Spacer() }
+                HStack(spacing: 10) { slotCard(.b1Black); slotCard(.b2White) }   // top: Team B
+                HStack(spacing: 10) { slotCard(.b1White); slotCard(.b2Black) }   // bottom: Team A
+            }
             Section {
                 Picker("Bot strength", selection: $level) { ForEach(1...10, id: \.self) { Text("Level \($0)").tag($0) } }
                 Button { service.beginMatch(store: store) } label: {
@@ -313,29 +348,40 @@ struct BughouseNearbyLobby: View {
         }
     }
 
-    /// One seat row in the host lobby, showing who's in it and an action for open/bot seats.
-    @ViewBuilder private func seatRow(_ s: BughouseSeat) -> some View {
-        HStack {
-            Text(s.label).font(.subheadline.weight(.medium))
-            Spacer()
+    /// One seat tile in the host lobby's table view: who's in it, plus add-bot / swap actions.
+    @ViewBuilder private func slotCard(_ s: BughouseSeat) -> some View {
+        let teamColor: Color = s.team == 0 ? brand.accent : .gray
+        VStack(spacing: 6) {
+            HStack(spacing: 4) {
+                Circle().fill(s.color == .white ? Color.white : Color.black)
+                    .frame(width: 9, height: 9).overlay(Circle().strokeBorder(.gray, lineWidth: 0.5))
+                Text("Team \(s.team == 0 ? "A" : "B")").font(.system(size: 9, weight: .heavy))
+                    .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 1)
+                    .background(teamColor, in: Capsule())
+                Spacer(minLength: 0)
+                Menu {
+                    ForEach(BughouseSeat.allCases.filter { $0 != s }) { o in
+                        Button("Swap with Bd\(o.board + 1) \(o.color == .white ? "White" : "Black")") { service.swapSeats(s, o) }
+                    }
+                } label: { Image(systemName: "arrow.left.arrow.right").font(.caption2) }
+            }
+            Group {
+                switch service.status(of: s) {
+                case .you: Label("You", systemImage: "person.fill").foregroundStyle(brand.accent)
+                case .joiner(let n): Label(n, systemImage: "person.fill.checkmark").foregroundStyle(.green).lineLimit(1)
+                case .bot(let lv): Label("Bot · Lv \(lv)", systemImage: "desktopcomputer").foregroundStyle(.secondary)
+                case .open: Label("Waiting…", systemImage: "hourglass").foregroundStyle(.secondary)
+                }
+            }.font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
             switch service.status(of: s) {
-            case .you:
-                Label("You", systemImage: "person.fill").font(.caption.weight(.semibold)).foregroundStyle(brand.accent)
-            case .joiner(let name):
-                Label(name, systemImage: "person.fill.checkmark").font(.caption.weight(.semibold)).foregroundStyle(.green)
-            case .bot(let lv):
-                HStack(spacing: 10) {
-                    Label("Bot · Lv \(lv)", systemImage: "desktopcomputer").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                    Button("Re-open") { service.reopenSeat(s) }.font(.caption).buttonStyle(.borderless)
-                }
-            case .open:
-                HStack(spacing: 10) {
-                    Label("Waiting…", systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
-                    Button("Add bot") { service.assignBot(s, level: level) }
-                        .font(.caption.weight(.semibold)).buttonStyle(.borderless)
-                }
+            case .open: Button("Add bot") { service.assignBot(s, level: level) }.font(.caption2.weight(.bold)).buttonStyle(.borderless)
+            case .bot: Button("Re-open seat") { service.reopenSeat(s) }.font(.caption2).buttonStyle(.borderless)
+            default: EmptyView()
             }
         }
+        .frame(maxWidth: .infinity).padding(8)
+        .background(teamColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(teamColor.opacity(0.4), lineWidth: 1))
     }
 
     @ViewBuilder private var joinSection: some View {

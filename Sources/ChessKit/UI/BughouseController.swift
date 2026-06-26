@@ -132,6 +132,12 @@ public final class BughouseController: ObservableObject {
 
     // Chess clocks (the heart of bughouse — you can stall, sitting on your time for a piece).
     @Published public private(set) var clock: [Double]   // seconds remaining, by seat.rawValue
+    @Published public var paused = false                 // host paused the match — all clocks frozen
+
+    /// Pause the match: freeze every clock and stop the bots.
+    public func pause() { guard !paused, !status.isOver else { return }; paused = true; aiTasks.forEach { $0?.cancel() } }
+    /// Resume after a pause: clocks tick again and bots pick back up.
+    public func resume() { guard paused else { return }; paused = false; maybeStartAI(0); maybeStartAI(1) }
     public private(set) var baseTime: Double
     public private(set) var increment: Double
     private var tickTask: Task<Void, Never>?
@@ -199,7 +205,7 @@ public final class BughouseController: ObservableObject {
                 guard let self else { return }
                 if self.status.isOver { return }
                 let now = Date(); let dt = now.timeIntervalSince(last); last = now
-                if self.status.isOver || self.replaying { continue }
+                if self.status.isOver || self.replaying || self.paused { continue }
                 for b in 0..<2 {
                     let s = self.seat(board: b, color: self.boards[b].pos.sideToMove)
                     self.clock[s.rawValue] = max(0, self.clock[s.rawValue] - dt)
@@ -411,7 +417,7 @@ public final class BughouseController: ObservableObject {
     // MARK: AI
 
     private func maybeStartAI(_ b: Int) {
-        guard !status.isOver else { return }
+        guard !status.isOver, !paused else { return }
         guard case .computer(let diff) = player(b, boards[b].pos.sideToMove) else { return }
         let moverSeat = seat(board: b, color: boards[b].pos.sideToMove)
         if sitting.contains(moverSeat) { thinking[b] = false; aiTasks[b]?.cancel(); return }   // told to sit — hold
@@ -435,7 +441,7 @@ public final class BughouseController: ObservableObject {
             try? await Task.sleep(nanoseconds: UInt64.random(in: lo...hi))
             guard let self else { return }
             self.thinking[b] = false
-            guard !self.status.isOver else { return }
+            guard !self.status.isOver, !self.paused else { return }
             // A pocket change (a piece arriving from the partner's capture) must NOT abort the move —
             // it only changes the reserve, not the board. Bail only if the board itself moved on / off turn.
             guard self.boards[b].pos.squares == snapshot.squares,
