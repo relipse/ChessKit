@@ -17,6 +17,31 @@ public final class BughouseNearbyService: NSObject, ObservableObject, BughouseNe
     @Published public var lobbyPeers: [String] = []           // host: connected joiners
     @Published public private(set) var controller: BughouseController?
     @Published public var mySeat: BughouseSeat?               // client
+    @Published public private(set) var planVersion = 0        // bumped when the host edits seats
+
+    /// Live status of a seat in the host lobby.
+    public enum SeatStatus: Equatable { case you, joiner(String), open, bot(Int) }
+    public func status(of seat: BughouseSeat) -> SeatStatus {
+        switch hostPlan[seat.rawValue] {
+        case .human: return .you
+        case .computer(let d): return .bot(d.level)
+        case .none:
+            if let p = peerSeat.first(where: { $0.value == seat }) { return .joiner(p.key.displayName) }
+            return .open
+        }
+    }
+    /// How many seats are still waiting for a nearby player (open, unclaimed).
+    public var humansWaiting: Int { BughouseSeat.allCases.filter { status(of: $0) == .open }.count }
+    /// Every seat is filled (you / a joiner / a bot) — ready to begin with no surprises.
+    public var allSeatsFilled: Bool { humansWaiting == 0 }
+    /// Host: drop a bot into an open seat (or change one's level).
+    public func assignBot(_ seat: BughouseSeat, level: Int) {
+        hostPlan[seat.rawValue] = .computer(Difficulty(level: level)); planVersion += 1
+    }
+    /// Host: re-open a bot seat to wait for a nearby player again.
+    public func reopenSeat(_ seat: BughouseSeat) {
+        if case .computer = hostPlan[seat.rawValue] { hostPlan[seat.rawValue] = nil; planVersion += 1 }
+    }
 
     /// Host seat plan: per seat, nil = open for a nearby player, .human = the host, .computer = bot.
     public var hostPlan: [SeatPlayer?] = [.human, nil, nil, .computer(.medium)]
@@ -231,7 +256,6 @@ struct BughouseNearbyLobby: View {
     let onCancel: () -> Void
 
     @State private var mode = 0                                  // 0 host · 1 join
-    @State private var plan = [0, 2, 2, 1]                       // per seat: 0 You · 1 Bot · 2 Open
     @State private var level = 4
     @State private var tc = 3   // default 10 min
     private let tcs: [(String, Double, Double)] = [("No timer", 0, 0), ("3 min", 180, 0), ("5 min", 300, 0), ("10 min", 600, 0), ("15 min", 900, 0)]
@@ -250,41 +274,66 @@ struct BughouseNearbyLobby: View {
 
     @ViewBuilder private var hostSection: some View {
         if service.phase == .hostLobby {
-            Section("Waiting for players") {
-                if service.lobbyPeers.isEmpty { Text("Open seats are advertised. Ask a friend to tap Join nearby on their device.").font(.callout).foregroundStyle(.secondary) }
-                ForEach(service.lobbyPeers, id: \.self) { Label($0, systemImage: "person.fill.checkmark") }
-            }
             Section {
+                if service.humansWaiting > 0 {
+                    Label("Waiting for \(service.humansWaiting) more player\(service.humansWaiting == 1 ? "" : "s") to join…",
+                          systemImage: "person.2.wave.2.fill").foregroundStyle(brand.accent)
+                } else {
+                    Label("All seats filled — ready to start!", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                }
+                Text("Your game is open on Wi-Fi — a friend taps Join Nearby to grab a seat. Impatient? Tap “Add bot” on any waiting seat.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section("Seats") { ForEach(BughouseSeat.allCases) { seatRow($0) } }
+            Section {
+                Picker("Bot strength", selection: $level) { ForEach(1...10, id: \.self) { Text("Level \($0)").tag($0) } }
                 Button { service.beginMatch(store: store) } label: {
                     Label("Begin Match", systemImage: "play.fill").frame(maxWidth: .infinity)
                 }.buttonStyle(.borderedProminent)
-                Text("Open seats with no one in them are played by the computer.").font(.caption).foregroundStyle(.secondary)
+                if service.humansWaiting > 0 {
+                    Text("Beginning now fills the \(service.humansWaiting) waiting seat\(service.humansWaiting == 1 ? "" : "s") with a Level \(level) bot.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
             }
         } else {
-            Section("Seats") {
-                ForEach(BughouseSeat.allCases) { s in
-                    Picker(s.label, selection: Binding(get: { plan[s.rawValue] }, set: { plan[s.rawValue] = $0 })) {
-                        Text("You").tag(0); Text("Computer").tag(1); Text("Nearby player").tag(2)
-                    }
-                }
-            }
             Section("Clock") {
                 Picker("Time", selection: $tc) { ForEach(tcs.indices, id: \.self) { Text(tcs[$0].0).tag($0) } }
-                if plan.contains(1) || plan.contains(2) {
-                    Picker("Computer level", selection: $level) { ForEach(1...10, id: \.self) { Text("\($0)").tag($0) } }
-                }
             }
             Section {
                 Button {
-                    service.hostPlan = BughouseSeat.allCases.map { s in
-                        switch plan[s.rawValue] { case 0: return .human; case 1: return .computer(Difficulty(level: level)); default: return nil }
-                    }
+                    service.hostPlan = [.human, nil, nil, nil]          // you + 3 seats open for nearby players
                     service.baseTime = tcs[tc].1; service.increment = tcs[tc].2
                     service.fallbackDifficulty = Difficulty(level: level)
                     service.startHosting()
                 } label: { Label("Host Game", systemImage: "wifi").frame(maxWidth: .infinity) }
                 .buttonStyle(.borderedProminent)
-                Text("Set seats to “Nearby player” so friends on the same Wi-Fi can join. Any nearby seat nobody claims is played by the computer.").font(.caption).foregroundStyle(.secondary)
+                Text("You take one seat; the other three open up for nearby players. On the next screen you can drop a bot into any seat you don't want to wait for.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    /// One seat row in the host lobby, showing who's in it and an action for open/bot seats.
+    @ViewBuilder private func seatRow(_ s: BughouseSeat) -> some View {
+        HStack {
+            Text(s.label).font(.subheadline.weight(.medium))
+            Spacer()
+            switch service.status(of: s) {
+            case .you:
+                Label("You", systemImage: "person.fill").font(.caption.weight(.semibold)).foregroundStyle(brand.accent)
+            case .joiner(let name):
+                Label(name, systemImage: "person.fill.checkmark").font(.caption.weight(.semibold)).foregroundStyle(.green)
+            case .bot(let lv):
+                HStack(spacing: 10) {
+                    Label("Bot · Lv \(lv)", systemImage: "desktopcomputer").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
+                    Button("Re-open") { service.reopenSeat(s) }.font(.caption).buttonStyle(.borderless)
+                }
+            case .open:
+                HStack(spacing: 10) {
+                    Label("Waiting…", systemImage: "hourglass").font(.caption).foregroundStyle(.secondary)
+                    Button("Add bot") { service.assignBot(s, level: level) }
+                        .font(.caption.weight(.semibold)).buttonStyle(.borderless)
+                }
             }
         }
     }
