@@ -238,8 +238,10 @@ public final class GameController: ObservableObject {
             selected = sq
             pocketSelection = nil
             if useKriegspielFog {
-                // Kriegspiel vs computer: offer every pseudo-legal destination — the referee decides.
-                targets = Set(pseudoDestinations(from: sq))
+                // Kriegspiel: offer the piece's movement geometry, blocked only by your OWN visible
+                // pieces. Enemy squares are unknown, so rays slide straight through them; the umpire
+                // rejects anything actually illegal. Never reveals where the hidden army is.
+                targets = Set(kriegspielAttemptTargets(from: sq))
             } else {
                 let legal = variant.legalMoves(from: sq, in: position)
                 // Forced capture (Losers): picked a piece that can't capture while a capture exists.
@@ -488,12 +490,55 @@ public final class GameController: ObservableObject {
 
     // MARK: Helpers
 
-    /// Pseudo-legal destinations from a square ignoring own-king safety (Kriegspiel offers these).
-    private func pseudoDestinations(from sq: Int) -> [Int] {
+    /// Squares the piece on `sq` may *attempt* to reach in Kriegspiel — its movement geometry,
+    /// blocked only by the player's own (visible) pieces. Enemy pieces are invisible, so sliding
+    /// rays pass straight through them and pawns always offer both diagonal "tries". The umpire
+    /// adjudicates the real legality; unlike position-legal targets, this leaks nothing about the
+    /// hidden army (rays don't stop where an unseen enemy sits).
+    private func kriegspielAttemptTargets(from sq: Int) -> [Int] {
         let me = position.sideToMove
         guard let p = position.squares[sq], p.color == me else { return [] }
-        var out = position.pseudoTargets(from: sq).filter { position.squares[$0]?.color != me }
-        if p.kind == .king { out += StandardRules.castlingMoves(position).filter { $0.from == sq }.map(\.to) }
+        let f = sq % 8, r = sq / 8
+        var out: [Int] = []
+        func own(_ t: Int) -> Bool { position.squares[t]?.color == me }
+        func add(_ ff: Int, _ rr: Int) {
+            if ff >= 0, ff < 8, rr >= 0, rr < 8, !own(rr * 8 + ff) { out.append(rr * 8 + ff) }
+        }
+        switch p.kind {
+        case .knight:
+            for (df, dr) in [(1, 2), (2, 1), (2, -1), (1, -2), (-1, -2), (-2, -1), (-2, 1), (-1, 2)] { add(f + df, r + dr) }
+        case .king:
+            for df in -1...1 { for dr in -1...1 where !(df == 0 && dr == 0) { add(f + df, r + dr) } }
+            out += StandardRules.castlingMoves(position).filter { $0.from == sq }.map(\.to)
+        case .bishop, .rook, .queen:
+            var dirs: [(Int, Int)] = []
+            if p.kind != .rook { dirs += [(1, 1), (1, -1), (-1, 1), (-1, -1)] }
+            if p.kind != .bishop { dirs += [(1, 0), (-1, 0), (0, 1), (0, -1)] }
+            for (df, dr) in dirs {
+                var ff = f + df, rr = r + dr
+                while ff >= 0, ff < 8, rr >= 0, rr < 8 {
+                    let t = rr * 8 + ff
+                    if own(t) { break }      // your own visible piece blocks the ray
+                    out.append(t)            // an unseen enemy may sit here — still attemptable
+                    ff += df; rr += dr       // keep sliding past it (you can't see the blocker)
+                }
+            }
+        case .pawn:
+            let dir = me == .white ? 1 : -1
+            let startRank = me == .white ? 1 : 6
+            if r + dir >= 0, r + dir < 8 {
+                let one = (r + dir) * 8 + f
+                if !own(one) {
+                    out.append(one)
+                    let two = (r + 2 * dir) * 8 + f
+                    if r == startRank, !own(two) { out.append(two) }
+                }
+                for df in [-1, 1] {          // always offer diagonal tries (hidden enemy / en passant)
+                    let cf = f + df
+                    if cf >= 0, cf < 8 { let t = (r + dir) * 8 + cf; if !own(t) { out.append(t) } }
+                }
+            }
+        }
         return out
     }
 

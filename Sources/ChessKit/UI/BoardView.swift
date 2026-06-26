@@ -147,7 +147,9 @@ public struct BoardView: View {
             if let piece, visible, i != dragFrom {
                 PieceGlyph(piece: piece, size: sq, appearance: appearance)
             }
-            if appearance.showLegalDots, targets.contains(i) {
+            // In fog of war (Kriegspiel) we never draw move dots — they'd guide blind play and,
+            // worse, leak the hidden army. The player attempts by feel; the umpire adjudicates.
+            if appearance.showLegalDots, hiddenColor == nil, targets.contains(i) {
                 if piece == nil {
                     Circle().fill(Color.black.opacity(0.22)).frame(width: sq * 0.32, height: sq * 0.32)
                 } else {
