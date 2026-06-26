@@ -108,6 +108,7 @@ struct BughouseMenuView: View {
                         Text("\(auto.log.count) moves").font(.caption).foregroundStyle(.secondary)
                     }
                     btn("New Match", "plus.circle.fill", prominent: store.autosave == nil) { showSetup = true }
+                    btn("Play Nearby", "wifi") { onNearby() }
                     if !store.slots.isEmpty { btn("Load Match", "tray.full.fill") { showLoad = true } }
                     if brand.onlineSlug != nil { btn("Internet Game", "globe") { showOnline = true } }
                     btn("How to Play", "book.fill") { showRules = true }
