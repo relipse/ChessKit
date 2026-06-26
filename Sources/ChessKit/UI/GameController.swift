@@ -58,6 +58,13 @@ public final class GameController: ObservableObject {
     /// Kriegspiel). The board is fully covered until the incoming player taps "reveal".
     @Published public private(set) var awaitingHandoff = false
 
+    /// Real-time "get ready" gate: because My Turn Chess is a no-turns scramble, the board is
+    /// covered when a game opens until both players tap to start. `startCountdown` then ticks
+    /// 3 → 2 → 1 → 0 ("GO!") so nobody gets a head start.
+    @Published public private(set) var awaitingStart = false
+    @Published public private(set) var startCountdown: Int?
+    private var didArmRealtimeStart = false
+
     // Tap-to-move selection state.
     @Published public var selected: Int?
     @Published public var targets: Set<Int> = []
@@ -155,6 +162,8 @@ public final class GameController: ObservableObject {
         history.removeAll(); sanHistory.removeAll(); umpireLog.removeAll()
         status = .ongoing; lastMove = nil; clearSelection(); lastVerdictIllegal = false
         awaitingHandoff = false
+        // Re-arm the real-time get-ready gate for the new game.
+        didArmRealtimeStart = false; startCountdown = nil; awaitingStart = (mode == .realtime)
         store?.clearAutosave()
         maybeStartAI()
     }
@@ -201,7 +210,7 @@ public final class GameController: ObservableObject {
 
     /// Handle a tap on board square `sq`.
     public func tap(_ sq: Int) {
-        guard isHumanTurn, !awaitingHandoff else { return }
+        guard isHumanTurn, !awaitingHandoff, !awaitingStart else { return }
         if isRealtime, Date().timeIntervalSince(lastRealtimeMoveAt) < realtimeCooldown { return }
         // Real-time: both armies are live. With nothing selected yet, a tap on a piece of the
         // idle army makes that army the side to move, so the existing selection/move pipeline
@@ -292,7 +301,7 @@ public final class GameController: ObservableObject {
 
     /// Drag-and-drop entry point: move the piece on `from` to `to` in one gesture.
     public func move(from: Int, to: Int) {
-        guard isHumanTurn, !awaitingHandoff else { return }
+        guard isHumanTurn, !awaitingHandoff, !awaitingStart else { return }
         pocketSelection = nil
         if selected != from {
             // Select the origin piece (lights up legal targets) without toggling it off.
@@ -307,7 +316,7 @@ public final class GameController: ObservableObject {
 
     /// Drop an armed pocket piece on `to` (drag from the reserve).
     public func drop(_ kind: PieceKind, to sq: Int) {
-        guard isHumanTurn, !awaitingHandoff, variant.usesPockets else { return }
+        guard isHumanTurn, !awaitingHandoff, !awaitingStart, variant.usesPockets else { return }
         guard (position.pockets[position.sideToMove]?.count(kind) ?? 0) > 0 else { return }
         let move = Move(drop: kind, to: sq)
         if variant.legalDrops(of: kind, in: position).contains(where: { $0.to == sq }) {
@@ -579,6 +588,32 @@ public final class GameController: ObservableObject {
         awaitingHandoff = false
         clearSelection()
         lastVerdictIllegal = false
+    }
+
+    /// Arm the real-time "get ready" gate when a (non-finished) My Turn Chess game appears, so
+    /// both players are attentive before the scramble. Fires once per screen presentation.
+    public func armRealtimeStartGate() {
+        guard mode == .realtime, !didArmRealtimeStart, !status.isOver else { return }
+        didArmRealtimeStart = true
+        awaitingStart = true
+        startCountdown = nil
+    }
+
+    /// Both players tapped "Start" — run a short 3 → 2 → 1 → GO countdown, then unlock the board.
+    public func beginCountdown() {
+        guard awaitingStart, startCountdown == nil else { return }
+        clearSelection()
+        Task { @MainActor in
+            for n in [3, 2, 1] {
+                startCountdown = n
+                try? await Task.sleep(nanoseconds: 700_000_000)
+            }
+            startCountdown = 0                       // "GO!"
+            try? await Task.sleep(nanoseconds: 450_000_000)
+            startCountdown = nil
+            awaitingStart = false
+            lastRealtimeMoveAt = .distantPast        // first move shouldn't be eaten by the cooldown
+        }
     }
 
     /// Status-bar label for whose turn it is, mode-aware.

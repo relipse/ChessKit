@@ -106,6 +106,7 @@ public struct ChessGameView: View {
         }
         .overlay { if game.pendingPromotion != nil { promotionOverlay } }
         .overlay { if game.awaitingHandoff { handoffOverlay } }
+        .overlay { if game.awaitingStart || game.startCountdown != nil { realtimeStartOverlay } }
         .overlay { if game.status.isOver { gameOverOverlay } }
         .sheet(isPresented: $showSettings) { SettingsView(game: game, brand: brand, appearance: appearance) }
         .sheet(isPresented: $showNewGame) { NewGameSheet(game: game, brand: brand) }
@@ -123,6 +124,7 @@ public struct ChessGameView: View {
         .tint(brand.accent)
         .onAppear {
             if (game.mode == .computer && game.humanColor == .black) || game.mode == .watch { game.startIfAIOpens() }
+            game.armRealtimeStartGate()
             if let nearby {
                 game.localColor = nearby.localColor
                 game.onLocalMove = { move in nearby.send(move) }
@@ -357,6 +359,38 @@ public struct ChessGameView: View {
             }
             .padding(24)
         }
+        .transition(.opacity)
+    }
+
+    /// "Get ready!" cover for the real-time scramble (My Turn Chess) — keeps the board hidden and
+    /// locked until both players tap Start, then runs a 3-2-1-GO countdown so nobody jumps early.
+    private var realtimeStartOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.94).ignoresSafeArea()
+            if let c = game.startCountdown {
+                Text(c == 0 ? "GO!" : "\(c)")
+                    .font(.system(size: 104, weight: .heavy, design: .rounded))
+                    .foregroundStyle(c == 0 ? .green : .white)
+                    .id(c)
+                    .transition(.scale.combined(with: .opacity))
+            } else {
+                VStack(spacing: 16) {
+                    Image(systemName: "bolt.fill").font(.system(size: 48)).foregroundStyle(brand.accent)
+                    Text("Get ready!").font(.largeTitle.weight(.heavy)).foregroundStyle(.white)
+                    Text("No turns — it's a scramble. Both players, hands on the board: the first legal move counts. Start when everyone's set.")
+                        .font(.subheadline).foregroundStyle(.white.opacity(0.8))
+                        .multilineTextAlignment(.center).padding(.horizontal, 36)
+                    Button { game.beginCountdown() } label: {
+                        Label("Start the scramble", systemImage: "play.fill")
+                            .font(.headline).foregroundStyle(.white)
+                            .padding(.horizontal, 26).padding(.vertical, 14)
+                            .background(brand.accent, in: Capsule())
+                    }
+                    .padding(.top, 8)
+                }
+            }
+        }
+        .animation(.spring(duration: 0.28), value: game.startCountdown)
         .transition(.opacity)
     }
 
