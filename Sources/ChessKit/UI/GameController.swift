@@ -667,6 +667,8 @@ public final class GameController: ObservableObject {
     /// both players are attentive before the scramble. Fires once per screen presentation.
     public func armRealtimeStartGate() {
         guard isRealtime, !didArmRealtimeStart, !status.isOver else { return }
+        // Screenshot mode: show the board directly, not the get-ready cover.
+        if UserDefaults.standard.string(forKey: "shot") == "game" { didArmRealtimeStart = true; return }
         didArmRealtimeStart = true
         awaitingStart = !humanColors.isEmpty   // Watch (no human) just starts
         startCountdown = nil
