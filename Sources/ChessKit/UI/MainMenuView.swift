@@ -121,7 +121,12 @@ public struct MainMenuView: View {
 
     public var body: some View {
         ZStack {
-            Theme.heroGradient(brand.accent).opacity(0.12).ignoresSafeArea()
+            if let bg = brand.backgroundAsset {
+                Image(bg, bundle: .main).resizable().scaledToFill().ignoresSafeArea()
+                Color.black.opacity(0.35).ignoresSafeArea()
+            } else {
+                Theme.heroGradient(brand.accent).opacity(0.12).ignoresSafeArea()
+            }
             VStack(spacing: 18) {
                 Spacer()
                 hero

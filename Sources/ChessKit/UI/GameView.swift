@@ -106,6 +106,14 @@ public struct ChessGameView: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity)
         }
+        .background {
+            if let bg = brand.backgroundAsset {
+                ZStack {
+                    Image(bg, bundle: .main).resizable().scaledToFill()
+                    Color.black.opacity(0.55)
+                }.ignoresSafeArea()
+            }
+        }
         .overlay { if game.pendingPromotion != nil { promotionOverlay } }
         .overlay { if game.awaitingHandoff { handoffOverlay } }
         .overlay { if game.awaitingStart || game.startCountdown != nil { realtimeStartOverlay } }
