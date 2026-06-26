@@ -127,6 +127,12 @@ public struct SplashGate<Content: View>: View {
                         .font(.title3.weight(.semibold)).foregroundStyle(.white)
                     Text("production").font(.caption).foregroundStyle(.white.opacity(0.8))
                 }
+                if let credit = brand.credit {
+                    Text(credit)
+                        .font(.footnote.weight(.medium)).foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, 10).padding(.horizontal, 24)
+                }
             }
         }
     }

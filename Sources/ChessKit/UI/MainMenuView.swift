@@ -176,7 +176,9 @@ public struct MainMenuView: View {
                 }
             }
             .padding(.horizontal, 24)
+            .frame(maxWidth: 520)            // keep the button column readable on big screens…
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)   // …but fill the whole window (iPad/Mac)
         // Background via a modifier so the (fill-scaled) art never drives layout size — otherwise
         // on wide windows (Mac/iPad) it balloons and pushes the menu off-screen.
         .background {
@@ -467,7 +469,7 @@ struct RulesView: View {
                     "Grab a piece of your colour and move it; the first legal move registers instantly — no waiting.",
                     "vs Computer: you both move at once. The difficulty level throttles the computer (higher = faster + stronger) so it doesn't blitz you.",
                     "Checks are up to you (Settings): 'King Capture' ignores check — just grab the enemy king; 'Checkmate' plays orthodox — no moving into check, mate or stalemate ends it.",
-                    "Rules invented by Jim Kinsman and Diana Larmore around 1998."]
+                    "My Turn Chess Variant by Jim K and Diana L in ~1998."]
         case "Pawn Duel":
             return ["Each side starts with just a king and three pawns in opposite corners.",
                     "Ordinary chess rules apply.",
