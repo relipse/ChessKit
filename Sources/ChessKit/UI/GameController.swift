@@ -407,6 +407,17 @@ public final class GameController: ObservableObject {
         selected = nil; targets = []; pocketSelection = nil
     }
 
+    /// Real-time: after the opponent/computer moves, keep the local player's tapped piece selected
+    /// and refresh its legal targets for the new position. Clears only if that piece is gone
+    /// (captured/moved). Also re-arms `sideToMove` so the next tap completes the move.
+    private func keepSelectionAlive() {
+        guard isRealtime, let s = selected else { return }
+        guard let p = position.squares[s], humanColors.contains(p.color) else { clearSelection(); return }
+        position.sideToMove = p.color
+        targets = useKriegspielFog ? Set(kriegspielAttemptTargets(from: s))
+                                   : Set(variant.legalMoves(from: s, in: position).map(\.to))
+    }
+
     // MARK: Applying moves
 
     /// Map a raw (from,to,promotion) to the exact legal move, picking up castle flags etc.
@@ -465,7 +476,9 @@ public final class GameController: ObservableObject {
             position.sideToMove = localColor.opposite
             let move = resolve(rawMove)
             guard variant.legalMoves(position).contains(move) else { return }
-            apply(move); return
+            apply(move)
+            keepSelectionAlive()    // don't lose the piece you'd tapped; refresh its squares
+            return
         }
         guard position.sideToMove != localColor else { return }
         let move = resolve(rawMove)
@@ -550,6 +563,7 @@ public final class GameController: ObservableObject {
                 }
                 position.sideToMove = color
                 apply(mv)
+                keepSelectionAlive()    // keep the human's tapped piece selected through AI moves
             }
         }
     }
