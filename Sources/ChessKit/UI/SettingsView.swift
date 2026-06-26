@@ -44,6 +44,11 @@ struct MyTurnRulePicker: View {
             ForEach(MyTurnChess.WinRule.allCases) { Text($0.title).tag($0.rawValue) }
         }.pickerStyle(.segmented)
         Text(rule.detail).font(.caption).foregroundStyle(.secondary)
+        if rule == .kingCapture {
+            Label("The goal is to capture the enemy king — there's no check or checkmate warning, so be careful to protect your own king!",
+                  systemImage: "crown.fill")
+                .font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
 
