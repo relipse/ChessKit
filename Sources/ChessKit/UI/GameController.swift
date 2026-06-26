@@ -34,6 +34,13 @@ public final class GameController: ObservableObject {
         didSet { defaults.set(difficulty.level, forKey: "ck.difficultyLevel") }
     }
     public var flipped: Bool {
+        if isRealtime {
+            switch mode {
+            case .nearby:   return localColor == .black   // each device faces its own army
+            case .computer: return humanColor == .black
+            default:        return false                  // shared one-device board
+            }
+        }
         switch mode {
         case .computer: return humanColor == .black
         case .nearby: return localColor == .black
@@ -43,12 +50,33 @@ public final class GameController: ObservableObject {
         }
     }
 
-    /// Real-time ("My Turn Chess"): both armies are live on one device with no enforced
-    /// turn order. The side to move simply follows whichever piece a player touches.
-    public var isRealtime: Bool { mode == .realtime }
+    /// Real-time ("My Turn Chess"): no enforced turn order. This is a trait of the *variant*,
+    /// so it layers onto every mode — vs Computer (throttled AI), 2 players on one device, and
+    /// nearby/internet (live relay) — not a mode of its own.
+    public var isRealtime: Bool { variant.isRealtime || mode == .realtime }
+
+    /// Colours the local player is allowed to move.
+    var humanColors: Set<PieceColor> {
+        switch mode {
+        case .computer:               return [humanColor]
+        case .nearby:                 return [localColor]
+        case .watch:                  return []
+        case .passAndPlay, .realtime: return [.white, .black]
+        }
+    }
+    /// Colours played by the computer (used by the real-time AI loop and turn-based AI).
+    var aiColors: [PieceColor] {
+        switch mode {
+        case .computer: return [humanColor.opposite]
+        case .watch:    return [.white, .black]
+        default:        return []
+        }
+    }
     /// Brief lockout after a real-time move so a single tap can't fire twice / machine-gun.
     public let realtimeCooldown: TimeInterval = 0.4
     private var lastRealtimeMoveAt: Date = .distantPast
+    /// The running real-time AI loop (vs Computer / Watch in a real-time variant).
+    private var realtimeAITask: Task<Void, Never>?
     /// Fog of war applies to Kriegspiel both vs-computer and pass-and-play (hot-seat).
     /// In hot-seat we hide the *non-mover's* army and gate turns behind a handoff screen.
     /// (Two-device "nearby" can't safely hide because both sides observe the same relay.)
@@ -135,6 +163,7 @@ public final class GameController: ObservableObject {
     /// Whether the local user may move right now (the side they control is to move).
     public var isHumanTurn: Bool {
         guard !status.isOver else { return false }
+        if isRealtime { return !humanColors.isEmpty }   // move your army any time, no turn lock
         switch mode {
         case .computer: return position.sideToMove == humanColor
         case .nearby: return position.sideToMove == localColor
@@ -163,7 +192,9 @@ public final class GameController: ObservableObject {
         status = .ongoing; lastMove = nil; clearSelection(); lastVerdictIllegal = false
         awaitingHandoff = false
         // Re-arm the real-time get-ready gate for the new game.
-        didArmRealtimeStart = false; startCountdown = nil; awaitingStart = (mode == .realtime)
+        didArmRealtimeStart = false; startCountdown = nil
+        awaitingStart = isRealtime && !humanColors.isEmpty
+        stopRealtimeAI(); if isRealtime { startRealtimeAILoop() }
         store?.clearAutosave()
         maybeStartAI()
     }
@@ -216,7 +247,7 @@ public final class GameController: ObservableObject {
         // idle army makes that army the side to move, so the existing selection/move pipeline
         // (which keys off `sideToMove`) Just Works without any per-colour special-casing.
         if isRealtime, selected == nil, pocketSelection == nil,
-           let p = position.squares[sq], p.color != position.sideToMove {
+           let p = position.squares[sq], humanColors.contains(p.color), p.color != position.sideToMove {
             position.sideToMove = p.color
         }
         lastVerdictIllegal = false
@@ -307,7 +338,7 @@ public final class GameController: ObservableObject {
             // Select the origin piece (lights up legal targets) without toggling it off.
             // Real-time: either army may be dragged, so let `tap` pick the side to move.
             if isRealtime {
-                if position.squares[from] != nil { tap(from) }
+                if let p = position.squares[from], humanColors.contains(p.color) { tap(from) }
             } else if let p = position.squares[from], p.color == position.sideToMove { tap(from) }
         }
         guard selected == from else { return }
@@ -390,6 +421,11 @@ public final class GameController: ObservableObject {
             guard variant.legalMoves(position).contains(move) else { return }
         }
         apply(move)
+        if isRealtime {
+            lastRealtimeMoveAt = Date()          // human anti-double-tap cooldown
+            if mode == .nearby { onLocalMove?(move) }   // relay to the peer (live)
+            return                                // vs-computer AI runs on its own throttled loop
+        }
         switch mode {
         case .computer: maybeStartAI()
         case .nearby: onLocalMove?(move)   // send to the peer
@@ -401,9 +437,18 @@ public final class GameController: ObservableObject {
         }
     }
 
-    /// Apply a move received from the nearby peer (their turn only).
+    /// Apply a move received from the nearby/internet peer.
     public func applyRemoteMove(_ rawMove: Move) {
-        guard mode == .nearby, !status.isOver, position.sideToMove != localColor else { return }
+        guard mode == .nearby, !status.isOver else { return }
+        if isRealtime {
+            // No turns: the remote move is always the *other* colour. Set the side to move so the
+            // move resolves/validates, then apply. First move to land on a square wins.
+            position.sideToMove = localColor.opposite
+            let move = resolve(rawMove)
+            guard variant.legalMoves(position).contains(move) else { return }
+            clearSelection(); apply(move); return
+        }
+        guard position.sideToMove != localColor else { return }
         let move = resolve(rawMove)
         guard variant.legalMoves(position).contains(move) else { return }
         clearSelection()
@@ -416,7 +461,6 @@ public final class GameController: ObservableObject {
         history.append(move)
         lastMove = move.isDrop ? nil : (move.from, move.to)
         status = variant.status(position)
-        if isRealtime { lastRealtimeMoveAt = Date() }
         autosave()
         if status.isOver {
             recordToHistory()
@@ -430,7 +474,7 @@ public final class GameController: ObservableObject {
     // MARK: AI opponent
 
     private func maybeStartAI() {
-        guard !status.isOver else { return }
+        guard !status.isOver, !isRealtime else { return }   // real-time uses its own throttled loop
         let aiToMove = (mode == .watch) || (mode == .computer && position.sideToMove != humanColor)
         guard aiToMove else { return }
         thinking = true
@@ -455,6 +499,35 @@ public final class GameController: ObservableObject {
             if self.mode == .watch { self.maybeStartAI() }   // chain — the other side moves next
         }
     }
+
+    /// Throttled real-time AI: while a real-time game is live, periodically pick a move for each
+    /// computer-controlled colour and play it. The cadence scales with difficulty so a human can
+    /// keep up — level 1 ≈ a move every ~3s, level 10 ≈ every ~0.6s — while the engine's *strength*
+    /// also rises with the level. Without this the computer would fire moves instantly.
+    public func startRealtimeAILoop() {
+        realtimeAITask?.cancel()
+        guard isRealtime, !aiColors.isEmpty else { realtimeAITask = nil; return }
+        realtimeAITask = Task { @MainActor in
+            while !Task.isCancelled, !status.isOver {
+                let lvl = Double(difficulty.level)                   // 1...10
+                let base = 3.0 - (lvl - 1) * (2.4 / 9.0)             // ~3.0s (lvl 1) … ~0.6s (lvl 10)
+                let wait = max(0.5, base) * Double.random(in: 0.8...1.3)
+                try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
+                if Task.isCancelled || status.isOver || awaitingStart { continue }   // wait for "GO"
+                let color = aiColors.count == 1 ? aiColors[0] : (aiColors.randomElement() ?? aiColors[0])
+                var snap = position; snap.sideToMove = color
+                let before = position
+                let eng = engine
+                let mv = await Task.detached(priority: .userInitiated) { eng.bestMove(in: snap) }.value
+                if Task.isCancelled || status.isOver || awaitingStart { continue }
+                guard position == before, let mv else { continue }   // a human move landed meanwhile
+                position.sideToMove = color
+                apply(mv)
+            }
+        }
+    }
+    /// Stop the real-time AI loop (call when leaving the board or starting a new game).
+    public func stopRealtimeAI() { realtimeAITask?.cancel(); realtimeAITask = nil }
 
     /// For Kriegspiel: tell the blind human only what a referee would reveal about the AI's move.
     private func announceOpponentMove(_ move: Move) {
@@ -593,10 +666,11 @@ public final class GameController: ObservableObject {
     /// Arm the real-time "get ready" gate when a (non-finished) My Turn Chess game appears, so
     /// both players are attentive before the scramble. Fires once per screen presentation.
     public func armRealtimeStartGate() {
-        guard mode == .realtime, !didArmRealtimeStart, !status.isOver else { return }
+        guard isRealtime, !didArmRealtimeStart, !status.isOver else { return }
         didArmRealtimeStart = true
-        awaitingStart = true
+        awaitingStart = !humanColors.isEmpty   // Watch (no human) just starts
         startCountdown = nil
+        startRealtimeAILoop()                  // idles until the countdown clears
     }
 
     /// Both players tapped "Start" — run a short 3 → 2 → 1 → GO countdown, then unlock the board.
@@ -625,6 +699,16 @@ public final class GameController: ObservableObject {
         case .nearby: return isHumanTurn ? "YOUR MOVE" : "OPPONENT'S MOVE"
         case .watch: return position.sideToMove == .white ? "WHITE…" : "BLACK…"
         case .realtime: return "GO — EITHER SIDE MOVES"
+        }
+    }
+
+    /// Real-time status label override (used by the status bar for My Turn Chess in any mode).
+    public var realtimeLabel: String {
+        switch mode {
+        case .nearby: return "REAL-TIME · you are \(localColor == .white ? "White" : "Black")"
+        case .computer: return "REAL-TIME · vs Computer"
+        case .watch: return "REAL-TIME · Computer vs Computer"
+        default: return "REAL-TIME · GO!"
         }
     }
 }

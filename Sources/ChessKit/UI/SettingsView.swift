@@ -14,16 +14,16 @@ public struct SettingsView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                if game.variant.isRealtimeOnly {
-                    // Real-time variants have no AI, so difficulty is irrelevant — offer the
-                    // check-handling rule instead.
+                Section(game.variant.isRealtime ? "Computer Speed & Strength" : "Difficulty") {
+                    DifficultyPicker(difficulty: Binding(
+                        get: { game.difficulty }, set: { game.difficulty = $0 }))
+                    Text(game.variant.isRealtime
+                         ? "Higher levels make the real-time computer move faster and play stronger. Takes effect on your next New Game."
+                         : "Takes effect on your next New Game.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                if game.variant.isRealtime {
                     Section("Checks") { MyTurnRulePicker() }
-                } else {
-                    Section("Difficulty") {
-                        DifficultyPicker(difficulty: Binding(
-                            get: { game.difficulty }, set: { game.difficulty = $0 }))
-                        Text("Takes effect on your next New Game.").font(.caption).foregroundStyle(.secondary)
-                    }
                 }
                 AppearanceSections(brand: brand, appearance: appearance)
             }

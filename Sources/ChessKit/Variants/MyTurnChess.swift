@@ -16,9 +16,9 @@ public struct MyTurnChess: ChessVariant {
     public var blurb: String {
         "Real-time chess — no turns! Both armies move at once; grab any piece and go."
     }
-    /// This variant is only ever played in real-time (no turns); it never offers the
-    /// turn-based Computer / 2-Players / Watch / Nearby modes.
-    public var isRealtimeOnly: Bool { true }
+    /// Real-time (no turn lock) in every mode — vs Computer (throttled AI), 2 players on one
+    /// device, and nearby/internet (live relay).
+    public var isRealtime: Bool { true }
 
     // MARK: How checks work (player-configurable in Settings)
 

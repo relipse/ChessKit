@@ -143,7 +143,7 @@ public struct ChessGameView: View {
                 }
             }
         }
-        .onDisappear { relayTask?.cancel() }
+        .onDisappear { relayTask?.cancel(); game.stopRealtimeAI() }
     }
 
     // MARK: Pieces of the screen
@@ -191,6 +191,8 @@ public struct ChessGameView: View {
         HStack {
             if game.status.isOver {
                 PillBadge(endLabel, color: endColor)
+            } else if game.isRealtime {
+                PillBadge(game.realtimeLabel, color: brand.accent)
             } else if game.thinking {
                 PillBadge("● THINKING", color: brand.accent, pulsing: true)
             } else {

@@ -14,9 +14,9 @@ public protocol ChessVariant: Sendable {
     var hidesOpponentPieces: Bool { get }
     /// Whether a capture is compulsory when one is available (Losers/Antichess).
     var forcesCapture: Bool { get }
-    /// Whether this variant is played exclusively in real-time (no turns). When true the
-    /// app only ever launches it in `.realtime` mode (no Computer / 2-Players / Watch / Nearby).
-    var isRealtimeOnly: Bool { get }
+    /// Whether this variant is played in real-time (no enforced turns). When true, every mode
+    /// (vs Computer, 2 players, nearby/internet) plays without a turn lock.
+    var isRealtime: Bool { get }
 
     /// The starting position.
     func startPosition() -> Position
@@ -39,7 +39,7 @@ public extension ChessVariant {
     var usesPockets: Bool { false }
     var hidesOpponentPieces: Bool { false }
     var forcesCapture: Bool { false }
-    var isRealtimeOnly: Bool { false }
+    var isRealtime: Bool { false }
 
     func startPosition() -> Position { .standard }
 

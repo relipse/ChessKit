@@ -142,13 +142,9 @@ public struct MainMenuView: View {
                     if variant is StandardChess {
                         menuButton("Set Up Pieces", systemImage: "square.grid.3x3.square") { showPieceSetup = true }
                     }
-                    // Nearby/Internet are turn-based two-device transports; a real-time variant
-                    // can't be played across devices, so it offers neither.
-                    if !variant.isRealtimeOnly {
-                        menuButton("Play Nearby", systemImage: "wifi") { showNearby = true }
-                        if brand.onlineSlug != nil {
-                            menuButton("Internet Game", systemImage: "globe") { showOnline = true }
-                        }
+                    menuButton("Play Nearby", systemImage: "wifi") { showNearby = true }
+                    if brand.onlineSlug != nil {
+                        menuButton("Internet Game", systemImage: "globe") { showOnline = true }
                     }
                     if !variantSlots.isEmpty {
                         menuButton("Load Game", systemImage: "tray.full.fill") { showLoad = true }
@@ -302,50 +298,49 @@ struct NewGameOptionsView: View {
     @State private var color: PieceColor = .white
     @State private var difficulty: Difficulty = .medium
 
-    /// Real-time-only variants (My Turn Chess) are always launched in `.realtime` — no
-    /// Computer / 2-Players / Watch options are offered.
-    private var realtimeOnly: Bool { variant.isRealtimeOnly }
+    /// Real-time variants (My Turn Chess) play every mode without a turn lock.
+    private var realtime: Bool { variant.isRealtime }
 
     var body: some View {
         NavigationStack {
             Form {
-                if realtimeOnly {
-                    Section("Mode") {
-                        Label("Real-Time · No Turns", systemImage: "bolt.fill").font(.headline)
-                        Text("No turns! Both players share this device — grab any piece of either colour and move whenever you like.")
+                Section("Opponent") {
+                    Picker("Mode", selection: $mode) {
+                        Text("Computer").tag(GameMode.computer)
+                        Text("2 Players").tag(GameMode.passAndPlay)
+                        Text("Watch").tag(GameMode.watch)
+                    }.pickerStyle(.segmented)
+                    if realtime, mode == .computer {
+                        Text("Real-time — you and the computer move at once; the computer is throttled by the difficulty below (higher = faster + stronger).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if realtime, mode == .passAndPlay {
+                        Text("Real-time — both players share this device; grab any piece of either colour and move whenever you like.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if mode == .passAndPlay {
+                        Text("Two players take turns on this device.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } else if mode == .watch {
+                        Text(realtime ? "Watch two throttled computers scramble in real time."
+                                      : "Sit back and watch the computer play itself.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    Section("Checks") { MyTurnRulePicker() }
-                } else {
-                    Section("Opponent") {
-                        Picker("Mode", selection: $mode) {
-                            Text("Computer").tag(GameMode.computer)
-                            Text("2 Players").tag(GameMode.passAndPlay)
-                            Text("Watch").tag(GameMode.watch)
+                }
+                if mode == .computer {
+                    Section("Play as") {
+                        Picker("Side", selection: $color) {
+                            Text("White").tag(PieceColor.white)
+                            Text("Black").tag(PieceColor.black)
                         }.pickerStyle(.segmented)
-                        if mode == .passAndPlay {
-                            Text("Two players take turns on this device.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                        if mode == .watch {
-                            Text("Sit back and watch the computer play itself.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }
-                    }
-                    if mode == .computer {
-                        Section("Play as") {
-                            Picker("Side", selection: $color) {
-                                Text("White").tag(PieceColor.white)
-                                Text("Black").tag(PieceColor.black)
-                            }.pickerStyle(.segmented)
-                        }
-                    }
-                    if mode == .computer || mode == .watch {
-                        Section(mode == .watch ? "Strength" : "Difficulty") { DifficultyPicker(difficulty: $difficulty) }
                     }
                 }
+                if mode == .computer || mode == .watch {
+                    Section(realtime ? "Computer Speed & Strength" : (mode == .watch ? "Strength" : "Difficulty")) {
+                        DifficultyPicker(difficulty: $difficulty)
+                    }
+                }
+                if realtime { Section("Checks") { MyTurnRulePicker() } }
                 Section {
-                    Button { onStart(realtimeOnly ? .realtime : mode, color, difficulty); dismiss() } label: {
+                    Button { onStart(mode, color, difficulty); dismiss() } label: {
                         Text("Start").frame(maxWidth: .infinity).font(.headline)
                     }.buttonStyle(.borderedProminent)
                 }
@@ -353,7 +348,6 @@ struct NewGameOptionsView: View {
             .navigationTitle("New \(brand.title) Game")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
-        .onAppear { if realtimeOnly { mode = .realtime } }
         .tint(brand.accent)
     }
 }
@@ -456,10 +450,11 @@ struct RulesView: View {
                     "Pawns are normal. Checkmate the king to win."]
         case "My Turn Chess":
             return ["Real-time chess — there are NO turns. Both armies are live at once.",
-                    "Two players share one device and move whenever they like — no waiting.",
-                    "Grab a piece of either colour and move it; the first legal move registers instantly.",
-                    "Checks are up to you (Settings): 'Checkmate' plays orthodox — no moving into check, mate or stalemate ends it; 'King Capture' ignores check — just grab the enemy king.",
-                    "A brief cooldown after each move keeps the scramble playable."]
+                    "Play vs the Computer, 2 players on one device, or against someone Nearby/over the Internet.",
+                    "Grab a piece of your colour and move it; the first legal move registers instantly — no waiting.",
+                    "vs Computer: you both move at once. The difficulty level throttles the computer (higher = faster + stronger) so it doesn't blitz you.",
+                    "Checks are up to you (Settings): 'King Capture' ignores check — just grab the enemy king; 'Checkmate' plays orthodox — no moving into check, mate or stalemate ends it.",
+                    "Rules invented by Jim Kinsman and Diana Larmore around 1998."]
         case "Pawn Duel":
             return ["Each side starts with just a king and three pawns in opposite corners.",
                     "Ordinary chess rules apply.",
