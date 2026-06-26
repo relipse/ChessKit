@@ -14,8 +14,8 @@ public struct ChessAppEntry: Identifiable, Sendable {
 /// "More Chess Games" screen so players can discover and jump to the others.
 public enum ChessAppCatalog {
     public static let developerName = "Kinsman Software LLC"
-    /// App Store search for everything by the studio (works before/after individual apps go live).
-    public static let developerURL = URL(string: "https://apps.apple.com/search?term=Kinsman%20Software%20chess")!
+    /// The developer's App Store page — lists every app by James Kinsman (artistId 1790196506).
+    public static let developerURL = URL(string: "https://apps.apple.com/developer/id1790196506")!
 
     public static let apps: [ChessAppEntry] = [
         ChessAppEntry(id: "6784078356", title: "Fog of War Chess (Kriegspiel)",
