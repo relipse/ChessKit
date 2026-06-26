@@ -14,6 +14,8 @@ public struct ChessGameView: View {
     @State private var showMore = false
     @State private var showQuit = false
     @State private var saveName = ""
+    /// Networked real-time: this device has tapped "Start" and is waiting for the peer.
+    @State private var tappedReady = false
     /// Nearby transport (only set in `.nearby` mode); wired to the controller on appear.
     private let nearby: NearbyService?
     /// Online (internet) session; wired to the controller on appear.
@@ -107,6 +109,7 @@ public struct ChessGameView: View {
         .overlay { if game.pendingPromotion != nil { promotionOverlay } }
         .overlay { if game.awaitingHandoff { handoffOverlay } }
         .overlay { if game.awaitingStart || game.startCountdown != nil { realtimeStartOverlay } }
+        .overlay { if let nearby, game.isRealtime { NearbyLagOverlay(service: nearby, game: game) } }
         .overlay { if game.status.isOver { gameOverOverlay } }
         .sheet(isPresented: $showSettings) { SettingsView(game: game, brand: brand, appearance: appearance) }
         .sheet(isPresented: $showNewGame) { NewGameSheet(game: game, brand: brand) }
@@ -129,6 +132,8 @@ public struct ChessGameView: View {
                 game.localColor = nearby.localColor
                 game.onLocalMove = { move in nearby.send(move) }
                 nearby.onReceiveMove = { [weak game] move in game?.applyRemoteMove(move) }
+                // Lock-step start: release the shared 3-2-1-GO countdown only when both are ready.
+                nearby.onGo = { [weak game] in game?.beginCountdown() }
             }
             if let session = onlineSession {
                 let online = ChessOnline.shared
@@ -382,13 +387,23 @@ public struct ChessGameView: View {
                     Text("No turns — it's a scramble. Both players, hands on the board: the first legal move counts. Start when everyone's set.")
                         .font(.subheadline).foregroundStyle(.white.opacity(0.8))
                         .multilineTextAlignment(.center).padding(.horizontal, 36)
-                    Button { game.beginCountdown() } label: {
-                        Label("Start the scramble", systemImage: "play.fill")
-                            .font(.headline).foregroundStyle(.white)
-                            .padding(.horizontal, 26).padding(.vertical, 14)
-                            .background(brand.accent, in: Capsule())
+                    if nearby != nil && tappedReady {
+                        // Networked: wait for the peer so both phones count down together.
+                        VStack(spacing: 8) { ProgressView().tint(.white)
+                            Text("Waiting for the other player…").font(.subheadline).foregroundStyle(.white.opacity(0.85)) }
+                            .padding(.top, 8)
+                    } else {
+                        Button {
+                            if let nearby { tappedReady = true; nearby.markReady() }   // synced start
+                            else { game.beginCountdown() }
+                        } label: {
+                            Label("Start the scramble", systemImage: "play.fill")
+                                .font(.headline).foregroundStyle(.white)
+                                .padding(.horizontal, 26).padding(.vertical, 14)
+                                .background(brand.accent, in: Capsule())
+                        }
+                        .padding(.top, 8)
                     }
-                    .padding(.top, 8)
                 }
             }
         }
@@ -413,5 +428,27 @@ public struct ChessGameView: View {
             .padding(.bottom, 40)
         }
         .transition(.opacity)
+    }
+}
+
+/// Covers the board when the nearby peer goes quiet (lag/drop) during a real-time game, so the
+/// two devices can't drift out of sync. Observes the service so it appears/clears reactively.
+struct NearbyLagOverlay: View {
+    @ObservedObject var service: NearbyService
+    @ObservedObject var game: GameController
+    var body: some View {
+        if service.peerLagging, !game.status.isOver, !game.awaitingStart, game.startCountdown == nil {
+            ZStack {
+                Color.black.opacity(0.9).ignoresSafeArea()
+                VStack(spacing: 14) {
+                    ProgressView().tint(.white)
+                    Text("Waiting for the other player…").font(.headline).foregroundStyle(.white)
+                    Text("Their device went quiet. The board is paused so you both stay in sync.")
+                        .font(.subheadline).foregroundStyle(.white.opacity(0.75))
+                        .multilineTextAlignment(.center).padding(.horizontal, 36)
+                }
+            }
+            .transition(.opacity)
+        }
     }
 }
