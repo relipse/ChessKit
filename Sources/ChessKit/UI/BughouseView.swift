@@ -504,14 +504,14 @@ public struct BughouseGameView: View {
         }
     }
 
-    /// One clock per board on its outer side — the side to move (the clock that's running),
-    /// centred on the board's height. Keeps the flank uncluttered (2 clocks total, not 4).
+    /// Both clocks for a board on its outer/far side — top-colour by the top edge, bottom-colour
+    /// by the bottom edge — like a real Bughouse clock. Board 1's pair sits on the far left,
+    /// Board 2's on the far right (4 times total, 2 per side).
     private func clockStrip(_ b: Int, top: PieceColor, bottom: PieceColor, height: CGFloat) -> some View {
-        let active = game.boards[b].pos.sideToMove
-        return VStack(spacing: 0) {
-            Spacer()
-            clockLabel(b, active)
-            Spacer()
+        VStack(spacing: 0) {
+            clockLabel(b, top)
+            Spacer(minLength: 8)
+            clockLabel(b, bottom)
         }.frame(width: clockW, height: height)
     }
 
