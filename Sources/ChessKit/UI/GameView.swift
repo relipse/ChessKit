@@ -105,6 +105,7 @@ public struct ChessGameView: View {
             .frame(maxWidth: .infinity)
         }
         .overlay { if game.pendingPromotion != nil { promotionOverlay } }
+        .overlay { if game.awaitingHandoff { handoffOverlay } }
         .overlay { if game.status.isOver { gameOverOverlay } }
         .sheet(isPresented: $showSettings) { SettingsView(game: game, brand: brand, appearance: appearance) }
         .sheet(isPresented: $showNewGame) { NewGameSheet(game: game, brand: brand) }
@@ -219,7 +220,7 @@ public struct ChessGameView: View {
     private func boardStack(size: CGFloat) -> some View {
         BoardView(position: game.position,
                   flipped: game.flipped,
-                  lastMove: game.lastMove,
+                  lastMove: game.displayLastMove,
                   selected: game.selected,
                   targets: game.targets,
                   hintSquares: game.mustCaptureSquares,
@@ -310,7 +311,7 @@ public struct ChessGameView: View {
                 HStack(spacing: 14) {
                     ForEach([PieceKind.queen, .rook, .bishop, .knight], id: \.self) { kind in
                         Button { game.choosePromotion(kind) } label: {
-                            PieceGlyph(piece: Piece(color: game.humanColor, kind: kind), size: 52,
+                            PieceGlyph(piece: Piece(color: game.position.sideToMove, kind: kind), size: 52,
                                        appearance: appearance)
                                 .frame(width: 60, height: 60)
                                 .background(brand.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
@@ -320,6 +321,35 @@ public struct ChessGameView: View {
             }
             .padding(22).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         }
+    }
+
+    /// Full-screen blackout shown between turns in hot-seat Kriegspiel so the outgoing player
+    /// can hand the device over without the incoming player seeing the previous perspective.
+    private var handoffOverlay: some View {
+        let next = game.position.sideToMove
+        let name = next == .white ? "White" : "Black"
+        return ZStack {
+            // Opaque cover — nothing on the board may bleed through.
+            Color.black.opacity(0.96).ignoresSafeArea()
+            VStack(spacing: 16) {
+                Image(systemName: "eye.slash.fill")
+                    .font(.system(size: 46)).foregroundStyle(.white.opacity(0.9))
+                Text("Pass the device").font(.title2.weight(.bold)).foregroundStyle(.white)
+                Text("\(name) to move").font(.headline).foregroundStyle(brand.accent)
+                Text("Hand the phone to the \(name) player. Only \(name)'s pieces will be shown — keep it hidden from the other player.")
+                    .font(.subheadline).foregroundStyle(.white.opacity(0.75))
+                    .multilineTextAlignment(.center).padding(.horizontal, 36)
+                Button { withAnimation { game.confirmHandoff() } } label: {
+                    Label("I'm \(name) — reveal my pieces", systemImage: "eye.fill")
+                        .font(.headline).foregroundStyle(.white)
+                        .padding(.horizontal, 26).padding(.vertical, 14)
+                        .background(brand.accent, in: Capsule())
+                }
+                .padding(.top, 8)
+            }
+            .padding(24)
+        }
+        .transition(.opacity)
     }
 
     private var gameOverOverlay: some View {

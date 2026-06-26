@@ -40,8 +40,14 @@ public final class GameController: ObservableObject {
         case .watch: return false                                 // fixed orientation while watching
         }
     }
-    /// Fog of war only applies to vs-computer Kriegspiel (two-device/hot-seat can't hide pieces).
-    var useKriegspielFog: Bool { variant.hidesOpponentPieces && mode == .computer }
+    /// Fog of war applies to Kriegspiel both vs-computer and pass-and-play (hot-seat).
+    /// In hot-seat we hide the *non-mover's* army and gate turns behind a handoff screen.
+    /// (Two-device "nearby" can't safely hide because both sides observe the same relay.)
+    var useKriegspielFog: Bool { variant.hidesOpponentPieces && (mode == .computer || mode == .passAndPlay) }
+
+    /// True while we're waiting for the device to be handed to the next player (hot-seat
+    /// Kriegspiel). The board is fully covered until the incoming player taps "reveal".
+    @Published public private(set) var awaitingHandoff = false
 
     // Tap-to-move selection state.
     @Published public var selected: Int?
@@ -138,6 +144,7 @@ public final class GameController: ObservableObject {
         position = start
         history.removeAll(); sanHistory.removeAll(); umpireLog.removeAll()
         status = .ongoing; lastMove = nil; clearSelection(); lastVerdictIllegal = false
+        awaitingHandoff = false
         store?.clearAutosave()
         maybeStartAI()
     }
@@ -184,7 +191,7 @@ public final class GameController: ObservableObject {
 
     /// Handle a tap on board square `sq`.
     public func tap(_ sq: Int) {
-        guard isHumanTurn else { return }
+        guard isHumanTurn, !awaitingHandoff else { return }
         lastVerdictIllegal = false
         mustCaptureHint = false; mustCaptureSquares = []
 
@@ -265,7 +272,7 @@ public final class GameController: ObservableObject {
 
     /// Drag-and-drop entry point: move the piece on `from` to `to` in one gesture.
     public func move(from: Int, to: Int) {
-        guard isHumanTurn else { return }
+        guard isHumanTurn, !awaitingHandoff else { return }
         pocketSelection = nil
         if selected != from {
             // Select the origin piece (lights up legal targets) without toggling it off.
@@ -277,7 +284,7 @@ public final class GameController: ObservableObject {
 
     /// Drop an armed pocket piece on `to` (drag from the reserve).
     public func drop(_ kind: PieceKind, to sq: Int) {
-        guard isHumanTurn, variant.usesPockets else { return }
+        guard isHumanTurn, !awaitingHandoff, variant.usesPockets else { return }
         guard (position.pockets[position.sideToMove]?.count(kind) ?? 0) > 0 else { return }
         let move = Move(drop: kind, to: sq)
         if variant.legalDrops(of: kind, in: position).contains(where: { $0.to == sq }) {
@@ -334,14 +341,19 @@ public final class GameController: ObservableObject {
     private func commitHuman(_ rawMove: Move) {
         let move = resolve(rawMove)
         if useKriegspielFog {
-            // Kriegspiel vs computer: the referee rules on the attempt; illegal attempts cost no turn.
+            // Kriegspiel: the referee rules on the attempt; illegal attempts cost no turn.
+            let mover = position.sideToMove
             let verdict = referee.adjudicate(move, in: position)
             guard verdict.legal else {
                 lastVerdictIllegal = true
                 umpireLog.append("⛔︎ \(verdict.announcement)")
                 return
             }
-            if !verdict.announcement.isEmpty { umpireLog.append("You: \(verdict.announcement)") }
+            if mode == .passAndPlay {
+                announceHotSeatMove(verdict, mover: mover)
+            } else if !verdict.announcement.isEmpty {
+                umpireLog.append("You: \(verdict.announcement)")
+            }
         } else {
             guard variant.legalMoves(position).contains(move) else { return }
         }
@@ -349,7 +361,9 @@ public final class GameController: ObservableObject {
         switch mode {
         case .computer: maybeStartAI()
         case .nearby: onLocalMove?(move)   // send to the peer
-        case .passAndPlay: break           // the other human moves next on this device
+        case .passAndPlay:
+            // Cover the board until the next player confirms they're holding the device.
+            if useKriegspielFog, !status.isOver { awaitingHandoff = true }
         case .watch: break                 // AI drives both sides (chained from maybeStartAI)
         }
     }
@@ -421,6 +435,23 @@ public final class GameController: ObservableObject {
         if tries > 0 { umpireLog.append("Umpire: \(tries) pawn \(tries == 1 ? "try" : "tries") — Any?") }
     }
 
+    /// Hot-seat Kriegspiel: log the umpire's public calls — what a real referee says aloud to
+    /// the room. Captures and checks are announced (positions are never revealed), then the
+    /// next player is told whose move it is and how many pawn tries they have.
+    private func announceHotSeatMove(_ v: KriegspielReferee.Verdict, mover: PieceColor) {
+        let next = mover.opposite
+        var parts: [String] = []
+        if v.capture, let sq = v.captureSquare { parts.append("Capture on \(squareName(sq)).") }
+        for c in v.checks { parts.append("Check \(c.rawValue).") }
+        let label = mover == .white ? "White" : "Black"
+        umpireLog.append("\(label): " + (parts.isEmpty ? "No capture, no check." : parts.joined(separator: " ")))
+
+        let nextLabel = next == .white ? "White" : "Black"
+        var nextParts = ["\(nextLabel) to move."]
+        if v.pawnTries > 0 { nextParts.append("\(v.pawnTries) pawn \(v.pawnTries == 1 ? "try" : "tries") — Any?") }
+        umpireLog.append("Umpire: " + nextParts.joined(separator: " "))
+    }
+
     private var armedAtStart = false
     private func maybeStartAtBoot() {}
 
@@ -454,8 +485,33 @@ public final class GameController: ObservableObject {
     }
     public var humanWon: Bool { status.winner == humanColor }
 
-    /// The colour to hide on the board (Kriegspiel vs computer only), else nil.
-    public var fogColor: PieceColor? { useKriegspielFog ? humanColor.opposite : nil }
+    /// The colour to hide on the board. vs-computer: always the opponent of the human.
+    /// Hot-seat: the side that is *not* to move (so the player holding the phone sees only
+    /// their own army). Once the game is over the fog lifts and the full board is revealed.
+    public var fogColor: PieceColor? {
+        guard useKriegspielFog, !status.isOver else { return nil }
+        switch mode {
+        case .computer:    return humanColor.opposite
+        case .passAndPlay: return position.sideToMove.opposite
+        default:           return nil
+        }
+    }
+
+    /// The last-move highlight to actually display. In Kriegspiel we must never reveal the
+    /// hidden side's move — the mover's piece now sits on `to`, so if that square holds a
+    /// fogged piece we suppress the highlight entirely.
+    public var displayLastMove: (from: Int, to: Int)? {
+        guard let lm = lastMove else { return nil }
+        if let fog = fogColor, position.squares[lm.to]?.color == fog { return nil }
+        return lm
+    }
+
+    /// Called by the handoff overlay once the next player confirms they're holding the device.
+    public func confirmHandoff() {
+        awaitingHandoff = false
+        clearSelection()
+        lastVerdictIllegal = false
+    }
 
     /// Status-bar label for whose turn it is, mode-aware.
     public var turnLabel: String {
