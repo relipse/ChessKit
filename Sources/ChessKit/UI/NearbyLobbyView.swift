@@ -12,14 +12,18 @@ public struct NearbyLobbyView: View {
     let brand: Brand
     @ObservedObject var appearance: Appearance
     let store: GameStore
+    /// Called once the two devices are connected — the parent presents the board full-screen
+    /// (so it isn't trapped inside this lobby sheet).
+    var onConnected: (NearbyService) -> Void
     @Environment(\.dismiss) private var dismiss
 
     #if canImport(MultipeerConnectivity)
     @StateObject private var service: NearbyService
-    @State private var playing = false
 
-    public init(variant: ChessVariant, brand: Brand, appearance: Appearance = .shared, store: GameStore) {
+    public init(variant: ChessVariant, brand: Brand, appearance: Appearance = .shared, store: GameStore,
+                onConnected: @escaping (NearbyService) -> Void) {
         self.variant = variant; self.brand = brand; self.appearance = appearance; self.store = store
+        self.onConnected = onConnected
         // Service id derives from the brand title so it matches the app's Info.plist
         // NSBonjourServices entry (also generated from the title).
         _service = StateObject(wrappedValue: NearbyService(
@@ -80,17 +84,17 @@ public struct NearbyLobbyView: View {
             .padding()
             .navigationTitle("Play Nearby")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { service.stop(); dismiss() } } }
-            .onChange(of: service.ready) { _, ready in if ready { playing = true } }
-            .gameCover(isPresented: $playing) {
-                ChessGameView(variant: variant, brand: brand, appearance: appearance,
-                              store: store, nearby: service, onExit: { service.stop(); dismiss() })
-            }
+            // Hand the connected transport up so the menu presents the board full-screen,
+            // rather than launching it nested inside this (small) lobby sheet.
+            .onChange(of: service.ready) { _, ready in if ready { onConnected(service) } }
         }
         .tint(brand.accent)
     }
     #else
-    public init(variant: ChessVariant, brand: Brand, appearance: Appearance = .shared, store: GameStore) {
+    public init(variant: ChessVariant, brand: Brand, appearance: Appearance = .shared, store: GameStore,
+                onConnected: @escaping (NearbyService) -> Void) {
         self.variant = variant; self.brand = brand; self.appearance = appearance; self.store = store
+        self.onConnected = onConnected
     }
     public var body: some View {
         Text("Nearby play isn't available on this device.").padding()

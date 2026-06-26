@@ -22,6 +22,19 @@ extension View {
     }
 }
 
+/// A connected nearby session, lifted to the menu root so the board can be presented
+/// full-screen (not nested inside the lobby sheet).
+struct NearbyLaunch: Identifiable {
+    let id = UUID()
+    let service: NearbyService
+}
+
+/// A live internet session, lifted to the menu root so the board is full-screen.
+struct OnlineLaunch: Identifiable {
+    let id = UUID()
+    let session: ChessOnline.OnlineSession
+}
+
 /// How a game should be launched from the menu.
 public enum GameLaunch: Identifiable {
     case fresh(mode: GameMode, humanColor: PieceColor, difficulty: Difficulty, start: Position? = nil)
@@ -88,7 +101,9 @@ public struct MainMenuView: View {
     @State private var showAbout = false
     @State private var showMore = false
     @State private var showNearby = false
+    @State private var nearbyLaunch: NearbyLaunch?
     @State private var showOnline = false
+    @State private var onlineLaunch: OnlineLaunch?
     @State private var showSetup = false
     @State private var showPieceSetup = false
     @Environment(\.requestReview) private var requestReview
@@ -178,9 +193,25 @@ public struct MainMenuView: View {
             }
         }
         .sheet(isPresented: $showNearby) {
-            NearbyLobbyView(variant: variant, brand: brand, appearance: appearance, store: store)
+            NearbyLobbyView(variant: variant, brand: brand, appearance: appearance, store: store,
+                            onConnected: { service in nearbyLaunch = NearbyLaunch(service: service) })
         }
-        .sheet(isPresented: $showOnline) { InternetGameView(brand: brand, variant: variant, store: store, appearance: appearance) }
+        // The connected nearby game is presented here, at the menu's root, so it fills the
+        // screen instead of being trapped inside the lobby sheet.
+        .gameCover(item: $nearbyLaunch) { launch in
+            ChessGameView(variant: variant, brand: brand, appearance: appearance, suite: nil,
+                          store: store, nearby: launch.service,
+                          onExit: { launch.service.stop(); nearbyLaunch = nil; showNearby = false })
+        }
+        .sheet(isPresented: $showOnline) {
+            InternetGameView(brand: brand, variant: variant, store: store, appearance: appearance,
+                             onPlay: { session in onlineLaunch = OnlineLaunch(session: session) })
+        }
+        .gameCover(item: $onlineLaunch) { launch in
+            ChessGameView(variant: variant, brand: brand, appearance: appearance, suite: nil,
+                          store: store, online: launch.session,
+                          onExit: { onlineLaunch = nil; showOnline = false })
+        }
         .sheet(isPresented: $showSetup) {
             Chess960SetupView(brand: brand, store: store, appearance: appearance) { pos, mode in
                 onLaunch(.fresh(mode: mode, humanColor: .white, difficulty: .medium, start: pos))

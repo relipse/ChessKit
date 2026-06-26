@@ -9,34 +9,34 @@ public struct InternetGameView: View {
     @ObservedObject private var appearance: Appearance
     @ObservedObject private var online = ChessOnline.shared
     @Environment(\.dismiss) private var dismiss
-    @State private var session: ChessOnline.OnlineSession?
     @State private var showAccount = false
+    /// Called when a live session begins — the parent presents the board full-screen (rather
+    /// than swapping it into this lobby sheet, which is tiny on iPad/Mac).
+    var onPlay: (ChessOnline.OnlineSession) -> Void
 
-    public init(brand: Brand, variant: ChessVariant? = nil, store: GameStore? = nil, appearance: Appearance = .shared) {
+    public init(brand: Brand, variant: ChessVariant? = nil, store: GameStore? = nil,
+                appearance: Appearance = .shared,
+                onPlay: @escaping (ChessOnline.OnlineSession) -> Void = { _ in }) {
         self.brand = brand; self.variant = variant; self.store = store; self.appearance = appearance
+        self.onPlay = onPlay
     }
 
     public var body: some View {
         Group {
-            if let session, let variant, let store {
-                ChessGameView(variant: variant, brand: brand, appearance: appearance, store: store,
-                              online: session, onExit: { self.session = nil })
-            } else {
-                NavigationStack {
-                    Group {
-                        if !online.isSignedIn { AccountView(brand: brand) }
-                        else if !online.entitled { PaywallView(brand: brand) }
-                        else { OnlineLobbyView(brand: brand, canPlay: variant != nil) { self.session = $0 } }
-                    }
-                    .navigationTitle("Internet Game")
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
-                        if online.isSignedIn {
-                            ToolbarItem(placement: .primaryAction) {
-                                Menu { Button("Sign Out") { online.signOut() }
-                                       Button("Delete Account", role: .destructive) { Task { await online.deleteAccount() } } }
-                                label: { Image(systemName: "person.crop.circle") }
-                            }
+            NavigationStack {
+                Group {
+                    if !online.isSignedIn { AccountView(brand: brand) }
+                    else if !online.entitled { PaywallView(brand: brand) }
+                    else { OnlineLobbyView(brand: brand, canPlay: variant != nil) { onPlay($0) } }
+                }
+                .navigationTitle("Internet Game")
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) { Button("Done") { dismiss() } }
+                    if online.isSignedIn {
+                        ToolbarItem(placement: .primaryAction) {
+                            Menu { Button("Sign Out") { online.signOut() }
+                                   Button("Delete Account", role: .destructive) { Task { await online.deleteAccount() } } }
+                            label: { Image(systemName: "person.crop.circle") }
                         }
                     }
                 }
