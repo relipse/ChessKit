@@ -507,10 +507,11 @@ public struct BughouseGameView: View {
 
     private func boardColumn(_ b: Int, size: CGFloat, landscape: Bool = false) -> some View {
         let bd = game.boards[b]
-        // Mirror the two boards: Board 1 has White at the bottom, Board 2 has Black at the bottom.
-        // That puts each TEAM (partners, opposite colours) together along one edge — Team A across
-        // both bottoms, Team B across both tops — the standard bughouse layout.
-        let bottom: PieceColor = (b == 0) ? .white : .black
+        // Orient both boards so the LOCAL player's team sits along the bottom — their own pieces
+        // nearest them. Team A = White on Board 1 / Black on Board 2; Team B is the mirror. Partners
+        // (same team, opposite colours) therefore share the bottom edge across both boards.
+        let teamABottom = (game.primaryHumanSeat?.team ?? 0) == 0
+        let bottom: PieceColor = teamABottom ? (b == 0 ? .white : .black) : (b == 0 ? .black : .white)
         let top = bottom.opposite
         let column = VStack(spacing: landscape ? 1 : 3) {
             HStack(spacing: 5) {
