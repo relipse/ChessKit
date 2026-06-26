@@ -95,6 +95,15 @@ public struct MainMenuView: View {
     @AppStorage("ck.launchCount") private var launchCount = 0
     @AppStorage("ck.didPromptReview") private var didPromptReview = false
 
+    // Saves are only ever offered for *this* app's variant — you can't continue or load a
+    // game of a different variant (guards against any stray/cross-variant entry in the store).
+    private var resumableAutosave: SavedGame? {
+        guard let a = store.autosave, a.variantName == variant.name else { return nil }
+        return a
+    }
+    private var variantSlots: [SavedGame] { store.slots.filter { $0.variantName == variant.name } }
+    private var variantHistory: [SavedGame] { store.history.filter { $0.variantName == variant.name } }
+
     public var body: some View {
         ZStack {
             Theme.heroGradient(brand.accent).opacity(0.12).ignoresSafeArea()
@@ -103,7 +112,7 @@ public struct MainMenuView: View {
                 hero
                 Spacer()
                 VStack(spacing: 12) {
-                    if let auto = store.autosave {
+                    if let auto = resumableAutosave {
                         menuButton("Continue", systemImage: "play.fill", prominent: true) {
                             onLaunch(.restore(auto))
                         }
@@ -111,21 +120,25 @@ public struct MainMenuView: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                     menuButton("New Game", systemImage: "plus.circle.fill",
-                               prominent: store.autosave == nil) { showNewGame = true }
+                               prominent: resumableAutosave == nil) { showNewGame = true }
                     if variant is Chess960 {
                         menuButton("Set Up Position", systemImage: "slider.horizontal.below.square.filled.and.square") { showSetup = true }
                     }
                     if variant is StandardChess {
                         menuButton("Set Up Pieces", systemImage: "square.grid.3x3.square") { showPieceSetup = true }
                     }
-                    menuButton("Play Nearby", systemImage: "wifi") { showNearby = true }
-                    if brand.onlineSlug != nil {
-                        menuButton("Internet Game", systemImage: "globe") { showOnline = true }
+                    // Nearby/Internet are turn-based two-device transports; a real-time variant
+                    // can't be played across devices, so it offers neither.
+                    if !variant.isRealtimeOnly {
+                        menuButton("Play Nearby", systemImage: "wifi") { showNearby = true }
+                        if brand.onlineSlug != nil {
+                            menuButton("Internet Game", systemImage: "globe") { showOnline = true }
+                        }
                     }
-                    if !store.slots.isEmpty {
+                    if !variantSlots.isEmpty {
                         menuButton("Load Game", systemImage: "tray.full.fill") { showLoad = true }
                     }
-                    if !store.history.isEmpty {
+                    if !variantHistory.isEmpty {
                         menuButton("Game History", systemImage: "clock.arrow.circlepath") { showHistory = true }
                     }
                     menuButton("Leaderboard", systemImage: "trophy.fill") {
@@ -179,7 +192,7 @@ public struct MainMenuView: View {
             }
         }
         .sheet(isPresented: $showLoad) {
-            SavedGamesListView(brand: brand, store: store) { onLaunch(.restore($0)) }
+            SavedGamesListView(variant: variant, brand: brand, store: store) { onLaunch(.restore($0)) }
         }
         .sheet(isPresented: $showRules) { RulesView(variant: variant, brand: brand) }
         .sheet(isPresented: $showAppearance) { AppearanceSettingsView(brand: brand, appearance: appearance) }
@@ -258,45 +271,49 @@ struct NewGameOptionsView: View {
     @State private var color: PieceColor = .white
     @State private var difficulty: Difficulty = .medium
 
-    /// "My Turn Chess" adds a real-time (no-turns) mode; only that variant offers it.
-    private var offersRealtime: Bool { variant is MyTurnChess }
+    /// Real-time-only variants (My Turn Chess) are always launched in `.realtime` — no
+    /// Computer / 2-Players / Watch options are offered.
+    private var realtimeOnly: Bool { variant.isRealtimeOnly }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section("Opponent") {
-                    Picker("Mode", selection: $mode) {
-                        if offersRealtime { Text("Real-Time").tag(GameMode.realtime) }
-                        Text("Computer").tag(GameMode.computer)
-                        Text("2 Players").tag(GameMode.passAndPlay)
-                        Text("Watch").tag(GameMode.watch)
-                    }.pickerStyle(.segmented)
-                    if mode == .realtime {
-                        Text("No turns! Both players share this device — grab any piece and move. Capture the enemy king to win.")
+                if realtimeOnly {
+                    Section("Mode") {
+                        Label("Real-Time · No Turns", systemImage: "bolt.fill").font(.headline)
+                        Text("No turns! Both players share this device — grab any piece of either colour and move whenever you like. Orthodox rules: checkmate or stalemate ends the game.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
-                    if mode == .passAndPlay {
-                        Text("Two players take turns on this device.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    if mode == .watch {
-                        Text("Sit back and watch the computer play itself.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-                if mode == .computer {
-                    Section("Play as") {
-                        Picker("Side", selection: $color) {
-                            Text("White").tag(PieceColor.white)
-                            Text("Black").tag(PieceColor.black)
+                } else {
+                    Section("Opponent") {
+                        Picker("Mode", selection: $mode) {
+                            Text("Computer").tag(GameMode.computer)
+                            Text("2 Players").tag(GameMode.passAndPlay)
+                            Text("Watch").tag(GameMode.watch)
                         }.pickerStyle(.segmented)
+                        if mode == .passAndPlay {
+                            Text("Two players take turns on this device.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if mode == .watch {
+                            Text("Sit back and watch the computer play itself.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
                     }
-                }
-                if mode == .computer || mode == .watch {
-                    Section(mode == .watch ? "Strength" : "Difficulty") { DifficultyPicker(difficulty: $difficulty) }
+                    if mode == .computer {
+                        Section("Play as") {
+                            Picker("Side", selection: $color) {
+                                Text("White").tag(PieceColor.white)
+                                Text("Black").tag(PieceColor.black)
+                            }.pickerStyle(.segmented)
+                        }
+                    }
+                    if mode == .computer || mode == .watch {
+                        Section(mode == .watch ? "Strength" : "Difficulty") { DifficultyPicker(difficulty: $difficulty) }
+                    }
                 }
                 Section {
-                    Button { onStart(mode, color, difficulty); dismiss() } label: {
+                    Button { onStart(realtimeOnly ? .realtime : mode, color, difficulty); dismiss() } label: {
                         Text("Start").frame(maxWidth: .infinity).font(.headline)
                     }.buttonStyle(.borderedProminent)
                 }
@@ -304,22 +321,26 @@ struct NewGameOptionsView: View {
             .navigationTitle("New \(brand.title) Game")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
-        .onAppear { if offersRealtime { mode = .realtime } }
+        .onAppear { if realtimeOnly { mode = .realtime } }
         .tint(brand.accent)
     }
 }
 
 /// List saved games with load + delete.
 struct SavedGamesListView: View {
+    let variant: ChessVariant
     let brand: Brand
     @ObservedObject var store: GameStore
     let onLoad: (SavedGame) -> Void
     @Environment(\.dismiss) private var dismiss
 
+    /// Only this app's variant — never offer to load a different variant's game.
+    private var slots: [SavedGame] { store.slots.filter { $0.variantName == variant.name } }
+
     var body: some View {
         NavigationStack {
             List {
-                ForEach(store.slots) { game in
+                ForEach(slots) { game in
                     Button { onLoad(game); dismiss() } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(game.name).font(.headline).foregroundStyle(.primary)
@@ -328,8 +349,8 @@ struct SavedGamesListView: View {
                         }
                     }
                 }
-                .onDelete { idx in idx.map { store.slots[$0] }.forEach(store.delete) }
-                if store.slots.isEmpty {
+                .onDelete { idx in idx.map { slots[$0] }.forEach(store.delete) }
+                if slots.isEmpty {
                     Text("No saved games yet.").foregroundStyle(.secondary)
                 }
             }
@@ -403,9 +424,9 @@ struct RulesView: View {
                     "Pawns are normal. Checkmate the king to win."]
         case "My Turn Chess":
             return ["Real-time chess — there are NO turns. Both armies are live at once.",
-                    "Pick the Real-Time mode: two players share the device and move whenever they like.",
+                    "Two players share one device and move whenever they like — no waiting.",
                     "Grab a piece of either colour and move it; the first legal move registers instantly.",
-                    "Check is never binding — capture the enemy king to win.",
+                    "Orthodox rules: moves must be legal, and checkmate or stalemate ends the game.",
                     "A brief cooldown after each move keeps the scramble playable."]
         case "Pawn Duel":
             return ["Each side starts with just a king and three pawns in opposite corners.",

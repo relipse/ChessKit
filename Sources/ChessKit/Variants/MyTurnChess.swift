@@ -6,41 +6,32 @@ import Foundation
 ///
 /// Interpretation (single device, two players sharing one board): turn order is not
 /// enforced. Pick up a piece of either colour and move it; the side to move simply
-/// follows whichever army you touch. Because nobody is ever forced to answer a check,
-/// the only coherent win condition is **capturing the enemy king** — checkmate and
-/// stalemate don't apply when either player can keep moving. Pieces still move by the
-/// ordinary chess rules (including castling, promotion and en passant).
-///
-/// Real-time play is driven by `GameMode.realtime`; the rules below are orthodox apart
-/// from the win condition, so the variant is also perfectly well-defined in the
-/// turn-based modes (vs Computer / 2 Players / Watch) where it plays as "king-capture
-/// chess".
+/// follows whichever army you touch. The chess rules themselves are entirely orthodox —
+/// moves must be legal (you can't leave your own king in check), and the game ends on
+/// **checkmate or stalemate** (and the usual draws) just like normal chess. The only
+/// twist is that there is no "wait your turn" lock: either side may move at any moment.
 public struct MyTurnChess: ChessVariant {
     public init() {}
     public var name: String { "My Turn Chess" }
     public var blurb: String {
-        "Real-time chess — no turns! Both armies move at once; grab any piece and go. Capture the enemy king to win."
+        "Real-time chess — no turns! Both armies move at once; grab any piece and go. Orthodox rules: checkmate or stalemate ends the game."
     }
+    /// This variant is only ever played in real-time (no turns); it never offers the
+    /// turn-based Computer / 2-Players / Watch / Nearby modes.
+    public var isRealtimeOnly: Bool { true }
 
-    /// Every pseudo-legal move for the side to move. Unlike orthodox chess we do NOT filter
-    /// out moves that leave your own king in check — check is never binding when the
-    /// opponent isn't obliged to wait for you — and capturing the enemy king is allowed
-    /// (that's how a game is won).
+    /// Orthodox legal moves for the side to move (no moving into check, no king capture).
     public func legalMoves(_ pos: Position) -> [Move] {
-        StandardRules.pseudoMoves(pos)
+        StandardChess.legalStandardMoves(pos)
     }
 
     public func make(_ move: Move, in pos: Position) -> Position {
         StandardRules.apply(move, to: pos).position
     }
 
-    /// The game ends only when a king is captured (or the 50-move clock runs out). There is
-    /// no checkmate or stalemate because neither side is forced to respond to a threat.
+    /// Standard endings: checkmate, stalemate and the usual draws end the game.
     public func status(_ pos: Position) -> GameStatus {
-        if pos.kingSquare(.white) == nil { return .variantWin(winner: .black, reason: "White king captured") }
-        if pos.kingSquare(.black) == nil { return .variantWin(winner: .white, reason: "Black king captured") }
-        if pos.halfmoveClock >= 100 { return .draw(reason: "50-move rule") }
-        return .ongoing
+        StandardChess.standardStatus(pos, variant: self)
     }
 
     /// Material plus a nudge to crowd the enemy king (the only target that ends the game).

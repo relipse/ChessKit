@@ -140,10 +140,13 @@ struct GameHistoryListView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var replaying: SavedGame?
 
+    /// Only this app's variant — never list a different variant's games.
+    private var games: [SavedGame] { store.history.filter { $0.variantName == variant.name } }
+
     var body: some View {
         NavigationStack {
             List {
-                ForEach(store.history) { game in
+                ForEach(games) { game in
                     Button { replaying = game } label: {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(game.result ?? game.name).font(.headline).foregroundStyle(.primary)
@@ -152,8 +155,8 @@ struct GameHistoryListView: View {
                         }
                     }
                 }
-                .onDelete { idx in idx.map { store.history[$0] }.forEach(store.deleteHistory) }
-                if store.history.isEmpty {
+                .onDelete { idx in idx.map { games[$0] }.forEach(store.deleteHistory) }
+                if games.isEmpty {
                     Text("Games you play will be saved here to replay.").foregroundStyle(.secondary)
                 }
             }

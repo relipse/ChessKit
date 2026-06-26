@@ -137,8 +137,7 @@ public final class GameController: ObservableObject {
         }
     }
     public var checkSquare: Int? {
-        // Check isn't binding in real-time (nobody must answer it), so don't flag it.
-        guard !useKriegspielFog, mode != .realtime else { return nil }
+        guard !useKriegspielFog else { return nil }
         let stm = position.sideToMove
         return position.inCheck(stm) ? position.kingSquare(stm) : nil
     }
