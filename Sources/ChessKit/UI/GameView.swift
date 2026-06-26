@@ -268,19 +268,26 @@ public struct ChessGameView: View {
     private var umpireLog: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 6) {
                     if game.umpireLog.isEmpty {
                         Text("The umpire's calls will appear here. You can only see your own pieces.")
-                            .font(.caption).foregroundStyle(.secondary)
+                            .font(.subheadline).foregroundStyle(.secondary)
                     }
                     ForEach(Array(game.umpireLog.enumerated()), id: \.offset) { i, line in
-                        Text(line).font(.caption.monospaced()).id(i)
+                        let isLatest = i == game.umpireLog.count - 1
+                        Text(line)
+                            // The newest call is the one that matters — show it large and bold;
+                            // older calls stay readable but recede.
+                            .font(isLatest ? .title3.monospaced().weight(.bold)
+                                           : .subheadline.monospaced())
+                            .foregroundStyle(isLatest ? .primary : .secondary)
+                            .id(i)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
-                .padding(10)
+                .padding(12)
             }
-            .frame(maxHeight: 120)
+            .frame(maxHeight: 200)
             .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10))
             .onChange(of: game.umpireLog.count) { _, c in withAnimation { proxy.scrollTo(c - 1, anchor: .bottom) } }
         }
