@@ -313,12 +313,17 @@ struct BughouseNearbyLobby: View {
                 Text("Your game is open on Wi-Fi — a friend taps Join Nearby to grab a seat. Impatient? Tap “Add bot” on any waiting seat.")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            Section("The table") {
-                Text("Partners sit across both boards (same team). The two players on one board are opponents.")
+            Section {
+                HStack(spacing: 6) {
+                    Image(systemName: "ladybug.fill").foregroundStyle(brand.accent)
+                    Text("The table").font(.headline)
+                }
+                Text("Partners sit across both boards (same team) — the two players on one board are opponents.")
                     .font(.caption2).foregroundStyle(.secondary)
-                HStack { Spacer(); Text("Board 1").font(.caption2.weight(.bold)).foregroundStyle(.secondary); Spacer(); Spacer(); Text("Board 2").font(.caption2.weight(.bold)).foregroundStyle(.secondary); Spacer() }
-                HStack(spacing: 10) { slotCard(.b1Black); slotCard(.b2White) }   // top: Team B
-                HStack(spacing: 10) { slotCard(.b1White); slotCard(.b2Black) }   // bottom: Team A
+                HStack(alignment: .top, spacing: 14) {
+                    lobbyBoard(0)
+                    lobbyBoard(1)
+                }.padding(.vertical, 4)
             }
             Section {
                 Picker("Bot strength", selection: $level) { ForEach(1...10, id: \.self) { Text("Level \($0)").tag($0) } }
@@ -348,40 +353,80 @@ struct BughouseNearbyLobby: View {
         }
     }
 
-    /// One seat tile in the host lobby's table view: who's in it, plus add-bot / swap actions.
-    @ViewBuilder private func slotCard(_ s: BughouseSeat) -> some View {
-        let teamColor: Color = s.team == 0 ? brand.accent : .gray
+    /// A board in the lobby: the two opposing seats above & below a little chessboard.
+    @ViewBuilder private func lobbyBoard(_ b: Int) -> some View {
+        let top: BughouseSeat = b == 0 ? .b1Black : .b2White      // top edge (Team B)
+        let bottom: BughouseSeat = b == 0 ? .b1White : .b2Black   // bottom edge (Team A)
         VStack(spacing: 6) {
-            HStack(spacing: 4) {
-                Circle().fill(s.color == .white ? Color.white : Color.black)
-                    .frame(width: 9, height: 9).overlay(Circle().strokeBorder(.gray, lineWidth: 0.5))
-                Text("Team \(s.team == 0 ? "A" : "B")").font(.system(size: 9, weight: .heavy))
-                    .foregroundStyle(.white).padding(.horizontal, 5).padding(.vertical, 1)
-                    .background(teamColor, in: Capsule())
-                Spacer(minLength: 0)
-                Menu {
-                    ForEach(BughouseSeat.allCases.filter { $0 != s }) { o in
-                        Button("Swap with Bd\(o.board + 1) \(o.color == .white ? "White" : "Black")") { service.swapSeats(s, o) }
-                    }
-                } label: { Image(systemName: "arrow.left.arrow.right").font(.caption2) }
-            }
+            Text("Board \(b + 1)").font(.caption.weight(.bold)).foregroundStyle(.secondary)
+            seatChip(top)
+            miniBoard(b)
+            seatChip(bottom)
+        }.frame(maxWidth: .infinity)
+    }
+
+    /// A compact seat chip: colour dot, team, who's sitting, plus add-bot / swap actions.
+    @ViewBuilder private func seatChip(_ s: BughouseSeat) -> some View {
+        let teamColor: Color = s.team == 0 ? brand.accent : .gray
+        HStack(spacing: 6) {
+            Circle().fill(s.color == .white ? Color.white : Color.black)
+                .frame(width: 12, height: 12).overlay(Circle().strokeBorder(.gray, lineWidth: 0.5))
+            Text(s.team == 0 ? "A" : "B").font(.system(size: 10, weight: .heavy))
+                .foregroundStyle(.white).frame(width: 17, height: 17).background(teamColor, in: Circle())
             Group {
                 switch service.status(of: s) {
                 case .you: Label("You", systemImage: "person.fill").foregroundStyle(brand.accent)
-                case .joiner(let n): Label(n, systemImage: "person.fill.checkmark").foregroundStyle(.green).lineLimit(1)
-                case .bot(let lv): Label("Bot · Lv \(lv)", systemImage: "desktopcomputer").foregroundStyle(.secondary)
-                case .open: Label("Waiting…", systemImage: "hourglass").foregroundStyle(.secondary)
+                case .joiner(let n): Label(n, systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                case .bot(let lv): Label("Bot Lv\(lv)", systemImage: "desktopcomputer").foregroundStyle(.secondary)
+                case .open: Label("Waiting", systemImage: "hourglass").foregroundStyle(.secondary)
                 }
-            }.font(.caption.weight(.semibold)).frame(maxWidth: .infinity)
+            }.font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.7)
+            Spacer(minLength: 2)
             switch service.status(of: s) {
-            case .open: Button("Add bot") { service.assignBot(s, level: level) }.font(.caption2.weight(.bold)).buttonStyle(.borderless)
-            case .bot: Button("Re-open seat") { service.reopenSeat(s) }.font(.caption2).buttonStyle(.borderless)
+            case .open: Button { service.assignBot(s, level: level) } label: { Image(systemName: "plus.circle.fill") }.buttonStyle(.borderless).foregroundStyle(brand.accent)
+            case .bot: Button { service.reopenSeat(s) } label: { Image(systemName: "xmark.circle") }.buttonStyle(.borderless).foregroundStyle(.secondary)
             default: EmptyView()
             }
+            Menu {
+                ForEach(BughouseSeat.allCases.filter { $0 != s }) { o in
+                    Button("Swap with Bd\(o.board + 1) \(o.color == .white ? "White" : "Black")") { service.swapSeats(s, o) }
+                }
+            } label: { Image(systemName: "arrow.left.arrow.right") }.buttonStyle(.borderless).font(.caption2)
         }
-        .frame(maxWidth: .infinity).padding(8)
-        .background(teamColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(teamColor.opacity(0.4), lineWidth: 1))
+        .padding(.horizontal, 8).padding(.vertical, 6)
+        .background(teamColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(teamColor.opacity(0.45), lineWidth: 1))
+    }
+
+    /// A small decorative chessboard with the opening position — eye-candy for the lobby.
+    private func miniBoard(_ b: Int) -> some View {
+        let dark = b == 0 ? Color(red: 0.71, green: 0.53, blue: 0.39) : Color(red: 0.46, green: 0.59, blue: 0.34)
+        let light = b == 0 ? Color(red: 0.94, green: 0.85, blue: 0.71) : Color(red: 0.93, green: 0.93, blue: 0.82)
+        let pieces = ["♜","♞","♝","♛","♚","♝","♞","♜"]
+        func glyph(_ r: Int, _ c: Int) -> (String, Color) {
+            switch r {
+            case 0: return (pieces[c], Color(white: 0.12)); case 1: return ("♟", Color(white: 0.12))
+            case 6: return ("♟", .white); case 7: return (pieces[c], .white)
+            default: return ("", .clear)
+            }
+        }
+        return VStack(spacing: 0) {
+            ForEach(0..<8, id: \.self) { r in
+                HStack(spacing: 0) {
+                    ForEach(0..<8, id: \.self) { c in
+                        let (g, gc) = glyph(r, c)
+                        ZStack {
+                            Rectangle().fill((r + c) % 2 == 0 ? light : dark)
+                            Text(g).font(.system(size: 14))
+                                .foregroundStyle(gc)
+                                .shadow(color: gc == .white ? .black.opacity(0.55) : .white.opacity(0.35), radius: 0.5)
+                        }.frame(width: 19, height: 19)
+                    }
+                }
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(.white.opacity(0.2), lineWidth: 1))
     }
 
     @ViewBuilder private var joinSection: some View {

@@ -514,9 +514,11 @@ public final class BughouseController: ObservableObject {
         case .b1Black: return .b2White; case .b2White: return .b1Black
         }
     }
-    /// The human "driving" — first human seat (used to aim comms and focus the layout).
+    /// The human "driving" this device — prefer a seat this device actually owns (a joiner owns
+    /// exactly one; the host may own several), so each player's OWN board is the focused/big one.
     public var primaryHumanSeat: BughouseSeat? {
-        BughouseSeat.allCases.first { seats[$0] == .human }
+        if let mine = BughouseSeat.allCases.first(where: { localSeats.contains($0) && seats[$0] == .human }) { return mine }
+        return BughouseSeat.allCases.first { seats[$0] == .human }
     }
     public var myBoard: Int { primaryHumanSeat?.board ?? 0 }
     public var hasHuman: Bool { primaryHumanSeat != nil }
