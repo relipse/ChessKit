@@ -4,10 +4,12 @@ import MultipeerConnectivity
 
 /// A wire packet exchanged between two nearby devices.
 struct NearbyPacket: Codable {
-    enum Kind: String, Codable { case start, move, resign, ready, go, ping }
+    enum Kind: String, Codable { case start, move, resign, ready, go, ping, drag }
     var kind: Kind
     var move: Move?
     var hostIsWhite: Bool?
+    var dragFrom: Int?
+    var dragTo: Int?
 }
 
 /// Peer-to-peer transport for a two-device game over MultipeerConnectivity (Wi-Fi / Bluetooth,
@@ -37,6 +39,8 @@ public final class NearbyService: NSObject, ObservableObject {
     public var onPeerLeft: (() -> Void)?
     /// Fired (on both devices) the moment both players are ready — start the shared countdown.
     public var onGo: (() -> Void)?
+    /// Experimental: the peer is dragging a piece (from, hovered-square) — nil when they let go.
+    public var onRemoteDrag: (((from: Int, to: Int)?) -> Void)?
 
     private var localReady = false
     private var heartbeat: Task<Void, Never>?
@@ -100,6 +104,13 @@ public final class NearbyService: NSObject, ObservableObject {
     // MARK: Send
 
     public func send(_ move: Move) { send(NearbyPacket(kind: .move, move: move, hostIsWhite: nil)) }
+
+    /// Relay a live drag (unreliable — it's transient; the authoritative move follows on drop).
+    public func sendDrag(from: Int, to: Int?) {
+        let p = NearbyPacket(kind: .drag, move: nil, hostIsWhite: nil, dragFrom: from, dragTo: to)
+        guard let data = try? JSONEncoder().encode(p), !session.connectedPeers.isEmpty else { return }
+        try? session.send(data, toPeers: session.connectedPeers, with: .unreliable)
+    }
 
     private func send(_ packet: NearbyPacket) {
         guard let data = try? JSONEncoder().encode(packet), !session.connectedPeers.isEmpty else { return }
@@ -184,6 +195,9 @@ extension NearbyService: MCSessionDelegate {
                 fireGo()                 // guest: both are ready, start the shared countdown
             case .ping:
                 break                    // liveness only (handled by noteHeard above)
+            case .drag:
+                if let f = packet.dragFrom, let t = packet.dragTo { onRemoteDrag?((f, t)) }
+                else { onRemoteDrag?(nil) }
             }
         }
     }

@@ -93,6 +93,11 @@ public final class GameController: ObservableObject {
     @Published public private(set) var startCountdown: Int?
     private var didArmRealtimeStart = false
 
+    /// Experimental: a translucent piece shown sliding to its target as the networked opponent or
+    /// the computer "drags" it, so fast-paced real-time moves are visible before they land.
+    @Published public var ghostDrag: (from: Int, to: Int)?
+    public func setGhostDrag(_ d: (from: Int, to: Int)?) { ghostDrag = d }
+
     // Tap-to-move selection state.
     @Published public var selected: Int?
     @Published public var targets: Set<Int> = []
@@ -521,6 +526,13 @@ public final class GameController: ObservableObject {
                 let mv = await Task.detached(priority: .userInitiated) { eng.bestMove(in: snap) }.value
                 if Task.isCancelled || status.isOver || awaitingStart { continue }
                 guard position == before, let mv else { continue }   // a human move landed meanwhile
+                // Show the computer "dragging" the piece to its target before it lands.
+                if !mv.isDrop {
+                    ghostDrag = (mv.from, mv.to)
+                    try? await Task.sleep(nanoseconds: 320_000_000)
+                    ghostDrag = nil
+                    if Task.isCancelled || status.isOver || position != before { continue }
+                }
                 position.sideToMove = color
                 apply(mv)
             }

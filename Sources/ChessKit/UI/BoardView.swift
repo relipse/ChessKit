@@ -22,6 +22,12 @@ public struct BoardView: View {
     public var onMove: ((Int, Int) -> Void)?
     /// Called when a reserve piece (Crazyhouse) is dragged from the pocket onto a square.
     public var onDropPiece: ((PieceKind, Int) -> Void)?
+    /// Experimental: a translucent "ghost" of a piece being dragged by the opponent / computer,
+    /// shown hovering over `to` (the piece itself still sits on `from`). nil → no ghost.
+    public var ghostDrag: (from: Int, to: Int)?
+    /// Experimental: reports the local drag as it crosses squares (from, hovered-square|nil-on-end)
+    /// so it can be relayed to a networked opponent.
+    public var onDragChange: ((Int, Int?) -> Void)?
 
     @ObservedObject private var appearance: Appearance
 
@@ -35,8 +41,10 @@ public struct BoardView: View {
                 targets: Set<Int> = [], hintSquares: Set<Int> = [], checkSquare: Int? = nil,
                 hiddenColor: PieceColor? = nil,
                 size: CGFloat, boardTheme: BoardTheme? = nil, appearance: Appearance = .shared,
+                ghostDrag: (from: Int, to: Int)? = nil,
                 onTap: ((Int) -> Void)? = nil, onMove: ((Int, Int) -> Void)? = nil,
-                onDropPiece: ((PieceKind, Int) -> Void)? = nil) {
+                onDropPiece: ((PieceKind, Int) -> Void)? = nil,
+                onDragChange: ((Int, Int?) -> Void)? = nil) {
         self.position = position
         self.flipped = flipped
         self.lastMove = lastMove
@@ -48,9 +56,19 @@ public struct BoardView: View {
         self.size = size
         self.boardTheme = boardTheme
         self.appearance = appearance
+        self.ghostDrag = ghostDrag
         self.onTap = onTap
         self.onMove = onMove
         self.onDropPiece = onDropPiece
+        self.onDragChange = onDragChange
+    }
+
+    /// Centre point of a square in board-local coordinates (respecting flip).
+    private func center(of i: Int, sq: CGFloat) -> CGPoint {
+        let file = i % 8, rank = i / 8
+        let col = flipped ? (7 - file) : file
+        let row = flipped ? rank : (7 - rank)
+        return CGPoint(x: (CGFloat(col) + 0.5) * sq, y: (CGFloat(row) + 0.5) * sq)
     }
 
     /// Map a point in board-local coordinates to a square index (respecting flip).
@@ -80,6 +98,16 @@ public struct BoardView: View {
                         }
                     }
                 }
+            }
+            // Experimental: the opponent's / computer's piece, shown ghosting toward its target.
+            if let g = ghostDrag, let piece = position.squares[g.from], piece.color != hiddenColor {
+                PieceGlyph(piece: piece, size: sq * 1.1, appearance: appearance)
+                    .frame(width: sq * 1.1, height: sq * 1.1)
+                    .position(center(of: g.to, sq: sq))
+                    .opacity(0.7)
+                    .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                    .allowsHitTesting(false)
+                    .animation(.easeOut(duration: 0.18), value: g.to)
             }
             // The lifted piece follows the finger during a drag.
             if let from = dragFrom, let piece = position.squares[from], piece.color != hiddenColor {
@@ -112,11 +140,15 @@ public struct BoardView: View {
                     onTap?(from)   // select so legal targets light up
                 }
                 dragLocation = value.location
-                dragOver = square(at: value.location)
+                let over = square(at: value.location)
+                if over != dragOver, let f = dragFrom { onDragChange?(f, over) }   // relay live drag
+                dragOver = over
             }
             .onEnded { value in
+                let started = dragFrom
                 defer { dragFrom = nil; dragOver = nil }
-                guard let from = dragFrom, let to = square(at: value.location), from != to else { return }
+                if let f = started { onDragChange?(f, nil) }   // clear the opponent's ghost
+                guard let from = started, let to = square(at: value.location), from != to else { return }
                 onMove?(from, to)
             }
     }

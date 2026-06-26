@@ -142,6 +142,8 @@ public struct ChessGameView: View {
                 nearby.onReceiveMove = { [weak game] move in game?.applyRemoteMove(move) }
                 // Lock-step start: release the shared 3-2-1-GO countdown only when both are ready.
                 nearby.onGo = { [weak game] in game?.beginCountdown() }
+                // Experimental: show the opponent's piece ghosting as they drag it.
+                nearby.onRemoteDrag = { [weak game] d in game?.setGhostDrag(d) }
             }
             if let session = onlineSession {
                 let online = ChessOnline.shared
@@ -245,9 +247,11 @@ public struct ChessGameView: View {
                   checkSquare: game.checkSquare,
                   hiddenColor: game.fogColor,
                   size: size, appearance: appearance,
+                  ghostDrag: game.ghostDrag,
                   onTap: { game.tap($0) },
                   onMove: { from, to in game.move(from: from, to: to) },
-                  onDropPiece: { kind, sq in game.drop(kind, to: sq) })
+                  onDropPiece: { kind, sq in game.drop(kind, to: sq) },
+                  onDragChange: nearby.map { svc in { (f: Int, t: Int?) in svc.sendDrag(from: f, to: t) } })
             .frame(width: size, height: size)
             .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }

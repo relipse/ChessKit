@@ -74,25 +74,28 @@ public struct MyTurnChess: ChessVariant {
         return .ongoing
     }
 
-    /// Material plus a nudge to crowd the enemy king (the only target that ends the game).
+    /// Material plus a strong reward for hunting the enemy king down — this is what makes the
+    /// real-time computer press an attack instead of shuffling.
     public func evaluate(_ pos: Position) -> Int {
         var score = pos.material() + centralBonus(pos)
         if let wk = pos.kingSquare(.white), let bk = pos.kingSquare(.black) {
-            score -= kingPressure(pos, king: bk, by: .white)   // pressuring Black's king favours White
-            score += kingPressure(pos, king: wk, by: .black)
+            score += kingHunt(pos, enemyKing: bk, by: .white)   // White crowding Black's king is good for White
+            score -= kingHunt(pos, enemyKing: wk, by: .black)   // Black crowding White's king is bad for White
         }
         return score
     }
 
-    /// Rough count of `attacker`'s pieces lurking near `king` — reward hunting the king down.
-    private func kingPressure(_ pos: Position, king: Int, by attacker: PieceColor) -> Int {
-        let f = king % 8, r = king / 8
-        var n = 0
-        for df in -2...2 { for dr in -2...2 {
-            let ff = f + df, rr = r + dr
-            guard ff >= 0, ff < 8, rr >= 0, rr < 8 else { continue }
-            if let p = pos.squares[rr * 8 + ff], p.color == attacker, p.kind != .king { n += 4 }
-        } }
-        return n
+    /// Reward `attacker`'s pieces for closing in on `enemyKing`. Pieces score more the nearer
+    /// they are (Chebyshev distance), so the engine marches the army at the king.
+    private func kingHunt(_ pos: Position, enemyKing: Int, by attacker: PieceColor) -> Int {
+        let kf = enemyKing % 8, kr = enemyKing / 8
+        var s = 0
+        for sq in 0..<64 {
+            guard let p = pos.squares[sq], p.color == attacker, p.kind != .king else { continue }
+            let d = max(abs(sq % 8 - kf), abs(sq / 8 - kr))   // 0…7
+            let weight = p.kind == .pawn ? 4 : 9              // major/minor pieces hunt harder
+            s += (7 - d) * weight
+        }
+        return s
     }
 }
