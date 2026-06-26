@@ -249,11 +249,19 @@ public struct MainMenuView: View {
 
     private var hero: some View {
         VStack(spacing: 14) {
-            Image(systemName: brand.systemImage)
-                .font(.system(size: 56, weight: .semibold)).foregroundStyle(.white)
-                .frame(width: 116, height: 116)
-                .background(Theme.heroGradient(brand.accent), in: RoundedRectangle(cornerRadius: 26))
-                .shadow(color: brand.accent.opacity(0.4), radius: 12, y: 6)
+            Group {
+                if let logo = brand.logoAsset {
+                    Image(logo, bundle: .main).resizable().scaledToFit()
+                        .frame(width: 116, height: 116)
+                        .clipShape(RoundedRectangle(cornerRadius: 26))
+                } else {
+                    Image(systemName: brand.systemImage)
+                        .font(.system(size: 56, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: 116, height: 116)
+                        .background(Theme.heroGradient(brand.accent), in: RoundedRectangle(cornerRadius: 26))
+                }
+            }
+            .shadow(color: brand.accent.opacity(0.4), radius: 12, y: 6)
             Text(brand.displayTitle)
                 .font(.system(.largeTitle, design: .rounded).weight(.heavy))
                 .multilineTextAlignment(.center)
