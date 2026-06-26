@@ -6,6 +6,7 @@ public enum GameMode: String, Codable, Sendable {
     case passAndPlay   // two humans sharing one device
     case nearby        // two humans on two nearby devices (MultipeerConnectivity)
     case watch         // computer vs computer — the human just watches
+    case realtime      // two humans, one device, NO turn order — either army may move at any time (My Turn Chess)
 }
 
 /// Drives a game of any `ChessVariant` — vs the computer, pass-and-play, or nearby.
@@ -38,8 +39,16 @@ public final class GameController: ObservableObject {
         case .nearby: return localColor == .black
         case .passAndPlay: return position.sideToMove == .black   // rotate to face the mover
         case .watch: return false                                 // fixed orientation while watching
+        case .realtime: return false                              // both players share one fixed board
         }
     }
+
+    /// Real-time ("My Turn Chess"): both armies are live on one device with no enforced
+    /// turn order. The side to move simply follows whichever piece a player touches.
+    public var isRealtime: Bool { mode == .realtime }
+    /// Brief lockout after a real-time move so a single tap can't fire twice / machine-gun.
+    public let realtimeCooldown: TimeInterval = 0.4
+    private var lastRealtimeMoveAt: Date = .distantPast
     /// Fog of war applies to Kriegspiel both vs-computer and pass-and-play (hot-seat).
     /// In hot-seat we hide the *non-mover's* army and gate turns behind a handoff screen.
     /// (Two-device "nearby" can't safely hide because both sides observe the same relay.)
@@ -123,11 +132,13 @@ public final class GameController: ObservableObject {
         case .computer: return position.sideToMove == humanColor
         case .nearby: return position.sideToMove == localColor
         case .passAndPlay: return true
-        case .watch: return false   // both sides are the computer
+        case .realtime: return true   // either army may move at any time
+        case .watch: return false     // both sides are the computer
         }
     }
     public var checkSquare: Int? {
-        guard !useKriegspielFog else { return nil }
+        // Check isn't binding in real-time (nobody must answer it), so don't flag it.
+        guard !useKriegspielFog, mode != .realtime else { return nil }
         let stm = position.sideToMove
         return position.inCheck(stm) ? position.kingSquare(stm) : nil
     }
@@ -192,6 +203,14 @@ public final class GameController: ObservableObject {
     /// Handle a tap on board square `sq`.
     public func tap(_ sq: Int) {
         guard isHumanTurn, !awaitingHandoff else { return }
+        if isRealtime, Date().timeIntervalSince(lastRealtimeMoveAt) < realtimeCooldown { return }
+        // Real-time: both armies are live. With nothing selected yet, a tap on a piece of the
+        // idle army makes that army the side to move, so the existing selection/move pipeline
+        // (which keys off `sideToMove`) Just Works without any per-colour special-casing.
+        if isRealtime, selected == nil, pocketSelection == nil,
+           let p = position.squares[sq], p.color != position.sideToMove {
+            position.sideToMove = p.color
+        }
         lastVerdictIllegal = false
         mustCaptureHint = false; mustCaptureSquares = []
 
@@ -276,7 +295,10 @@ public final class GameController: ObservableObject {
         pocketSelection = nil
         if selected != from {
             // Select the origin piece (lights up legal targets) without toggling it off.
-            if let p = position.squares[from], p.color == position.sideToMove { tap(from) }
+            // Real-time: either army may be dragged, so let `tap` pick the side to move.
+            if isRealtime {
+                if position.squares[from] != nil { tap(from) }
+            } else if let p = position.squares[from], p.color == position.sideToMove { tap(from) }
         }
         guard selected == from else { return }
         tap(to)
@@ -365,6 +387,7 @@ public final class GameController: ObservableObject {
             // Cover the board until the next player confirms they're holding the device.
             if useKriegspielFog, !status.isOver { awaitingHandoff = true }
         case .watch: break                 // AI drives both sides (chained from maybeStartAI)
+        case .realtime: break              // no turn lock — the opponent may reply immediately
         }
     }
 
@@ -383,6 +406,7 @@ public final class GameController: ObservableObject {
         history.append(move)
         lastMove = move.isDrop ? nil : (move.from, move.to)
         status = variant.status(position)
+        if isRealtime { lastRealtimeMoveAt = Date() }
         autosave()
         if status.isOver {
             recordToHistory()
@@ -521,6 +545,7 @@ public final class GameController: ObservableObject {
         case .passAndPlay: return position.sideToMove == .white ? "WHITE TO MOVE" : "BLACK TO MOVE"
         case .nearby: return isHumanTurn ? "YOUR MOVE" : "OPPONENT'S MOVE"
         case .watch: return position.sideToMove == .white ? "WHITE…" : "BLACK…"
+        case .realtime: return "GO — EITHER SIDE MOVES"
         }
     }
 }

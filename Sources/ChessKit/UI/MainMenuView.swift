@@ -258,15 +258,23 @@ struct NewGameOptionsView: View {
     @State private var color: PieceColor = .white
     @State private var difficulty: Difficulty = .medium
 
+    /// "My Turn Chess" adds a real-time (no-turns) mode; only that variant offers it.
+    private var offersRealtime: Bool { variant is MyTurnChess }
+
     var body: some View {
         NavigationStack {
             Form {
                 Section("Opponent") {
                     Picker("Mode", selection: $mode) {
+                        if offersRealtime { Text("Real-Time").tag(GameMode.realtime) }
                         Text("Computer").tag(GameMode.computer)
                         Text("2 Players").tag(GameMode.passAndPlay)
                         Text("Watch").tag(GameMode.watch)
                     }.pickerStyle(.segmented)
+                    if mode == .realtime {
+                        Text("No turns! Both players share this device — grab any piece and move. Capture the enemy king to win.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                     if mode == .passAndPlay {
                         Text("Two players take turns on this device.")
                             .font(.caption).foregroundStyle(.secondary)
@@ -296,6 +304,7 @@ struct NewGameOptionsView: View {
             .navigationTitle("New \(brand.title) Game")
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } } }
         }
+        .onAppear { if offersRealtime { mode = .realtime } }
         .tint(brand.accent)
     }
 }
@@ -392,6 +401,12 @@ struct RulesView: View {
                     "a/h files move like rooks, b/g like knights, c/f like bishops.",
                     "d-file pieces move like a queen; e-file like a king (one step).",
                     "Pawns are normal. Checkmate the king to win."]
+        case "My Turn Chess":
+            return ["Real-time chess — there are NO turns. Both armies are live at once.",
+                    "Pick the Real-Time mode: two players share the device and move whenever they like.",
+                    "Grab a piece of either colour and move it; the first legal move registers instantly.",
+                    "Check is never binding — capture the enemy king to win.",
+                    "A brief cooldown after each move keeps the scramble playable."]
         case "Pawn Duel":
             return ["Each side starts with just a king and three pawns in opposite corners.",
                     "Ordinary chess rules apply.",

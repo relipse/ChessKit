@@ -181,6 +181,7 @@ public struct ChessGameView: View {
         case .passAndPlay: return "2 Players · this device"
         case .nearby: return "Nearby · you play \(game.localColor == .white ? "White" : "Black")"
         case .watch: return "Computer vs Computer · \(game.difficulty.title)"
+        case .realtime: return "Real-Time · 2 Players · no turns"
         }
     }
 

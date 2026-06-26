@@ -44,7 +44,11 @@ public enum ChessAppCatalog {
                       systemImage: "person.2.square.stack", accent: Color(red: 0.149, green: 0.569, blue: 0.549)),
         ChessAppEntry(id: "6784103760", title: "Chess by Kinsman Software",
                       blurb: "Clean, classic chess vs the computer or a friend.",
-                      systemImage: "crown.fill", accent: Color(red: 0.55, green: 0.36, blue: 0.20))
+                      systemImage: "crown.fill", accent: Color(red: 0.55, green: 0.36, blue: 0.20)),
+        // App Store ID is a placeholder until the App Store Connect record is created.
+        ChessAppEntry(id: "6784999999", title: "My Turn Chess",
+                      blurb: "Real-time chess — no turns; both players move at once.",
+                      systemImage: "bolt.fill", accent: Color(red: 0.86, green: 0.27, blue: 0.42))
     ]
 }
 

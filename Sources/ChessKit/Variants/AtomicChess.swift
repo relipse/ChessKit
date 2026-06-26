@@ -101,6 +101,6 @@ public struct AtomicChess: ChessVariant {
 public enum Variants {
     public static let all: [ChessVariant] = [
         StandardChess(), KriegspielChess(), CrazyhouseChess(), AtomicChess(),
-        Chess960(), LosersChess(), ShapeshifterChess(), PawnDuelChess()
+        Chess960(), LosersChess(), ShapeshifterChess(), PawnDuelChess(), MyTurnChess()
     ]
 }
