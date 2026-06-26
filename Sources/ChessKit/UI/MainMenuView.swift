@@ -102,8 +102,10 @@ public struct MainMenuView: View {
     @State private var showMore = false
     @State private var showNearby = false
     @State private var nearbyLaunch: NearbyLaunch?
+    @State private var pendingNearby: NearbyService?
     @State private var showOnline = false
     @State private var onlineLaunch: OnlineLaunch?
+    @State private var pendingOnline: ChessOnline.OnlineSession?
     @State private var showSetup = false
     @State private var showPieceSetup = false
     @Environment(\.requestReview) private var requestReview
@@ -203,20 +205,25 @@ public struct MainMenuView: View {
                 onLaunch(.fresh(mode: mode, humanColor: color, difficulty: diff))
             }
         }
-        .sheet(isPresented: $showNearby) {
+        // Lobby → on connect, dismiss the sheet, THEN (onDismiss) present the board full-screen.
+        // (iOS won't present a fullScreenCover while the sheet is still up — that left it stuck
+        // at "Connected! Starting…".)
+        .sheet(isPresented: $showNearby, onDismiss: {
+            if let s = pendingNearby { pendingNearby = nil; nearbyLaunch = NearbyLaunch(service: s) }
+        }) {
             NearbyLobbyView(variant: variant, brand: brand, appearance: appearance, store: store,
-                            onConnected: { service in nearbyLaunch = NearbyLaunch(service: service) })
+                            onConnected: { service in pendingNearby = service; showNearby = false })
         }
-        // The connected nearby game is presented here, at the menu's root, so it fills the
-        // screen instead of being trapped inside the lobby sheet.
         .gameCover(item: $nearbyLaunch) { launch in
             ChessGameView(variant: variant, brand: brand, appearance: appearance, suite: nil,
                           store: store, nearby: launch.service,
-                          onExit: { launch.service.stop(); nearbyLaunch = nil; showNearby = false })
+                          onExit: { launch.service.stop(); nearbyLaunch = nil })
         }
-        .sheet(isPresented: $showOnline) {
+        .sheet(isPresented: $showOnline, onDismiss: {
+            if let s = pendingOnline { pendingOnline = nil; onlineLaunch = OnlineLaunch(session: s) }
+        }) {
             InternetGameView(brand: brand, variant: variant, store: store, appearance: appearance,
-                             onPlay: { session in onlineLaunch = OnlineLaunch(session: session) })
+                             onPlay: { session in pendingOnline = session; showOnline = false })
         }
         .gameCover(item: $onlineLaunch) { launch in
             ChessGameView(variant: variant, brand: brand, appearance: appearance, suite: nil,
