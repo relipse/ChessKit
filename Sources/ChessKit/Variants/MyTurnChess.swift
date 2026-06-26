@@ -56,14 +56,20 @@ public struct MyTurnChess: ChessVariant {
         StandardRules.apply(move, to: pos).position
     }
 
-    /// Checkmate mode ends on checkmate / stalemate / the usual draws; King-Capture mode ends
-    /// only when a king is taken (or the 50-move clock runs out).
+    /// Game-over detection. Crucially, **stalemate never ends the game** here: with no turns,
+    /// a side that has no legal move isn't drawn — it simply can't move while the opponent plays
+    /// on. Checkmate mode still ends on a true mate; King-Capture mode ends when a king is taken.
+    /// Both fall back to the 50-move clock so a stuck position can't run forever.
     public func status(_ pos: Position) -> GameStatus {
-        guard Self.winRule == .kingCapture else {
-            return StandardChess.standardStatus(pos, variant: self)
+        if Self.winRule == .kingCapture {
+            if pos.kingSquare(.white) == nil { return .variantWin(winner: .black, reason: "White king captured") }
+            if pos.kingSquare(.black) == nil { return .variantWin(winner: .white, reason: "Black king captured") }
+        } else {
+            // Checkmate, but not stalemate: only a side that is *in check* with no legal move loses.
+            if pos.inCheck(pos.sideToMove), legalMoves(pos).isEmpty {
+                return .checkmate(winner: pos.sideToMove.opposite)
+            }
         }
-        if pos.kingSquare(.white) == nil { return .variantWin(winner: .black, reason: "White king captured") }
-        if pos.kingSquare(.black) == nil { return .variantWin(winner: .white, reason: "Black king captured") }
         if pos.halfmoveClock >= 100 { return .draw(reason: "50-move rule") }
         return .ongoing
     }
