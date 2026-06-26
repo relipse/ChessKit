@@ -252,8 +252,19 @@ public struct BughouseSetupView: View {
     let onNearby: () -> Void
     let onStart: ([BughouseSeat: SeatPlayer], Double, Double) -> Void
     @State private var human: [Bool] = [true, false, false, false]
+    @State private var preset = 0        // index of the selected quick-setup preset (nil-able via -1)
     @State private var level = 4
     @State private var timeControl = 3   // index into timeControls (default 10 min)
+
+    // Quick-setup presets. "Solo" puts BOTH of Team A's seats (opposite colours on opposite
+    // boards) on this one device, so a single human plays both boards — their own partner.
+    private let presets: [(title: String, config: [Bool])] = [
+        ("You + 3 bots", [true, false, false, false]),
+        ("Solo — play both boards", [true, false, false, true]),
+        ("You + partner, 2 bots", [true, false, false, true]),
+        ("4 humans (same device)", [true, true, true, true]),
+        ("Watch (4 bots)", [false, false, false, false]),
+    ]
 
     // base seconds (0 = no timer), increment seconds.
     private let timeControls: [(label: String, base: Double, inc: Double)] = [
@@ -272,10 +283,7 @@ public struct BughouseSetupView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Quick setup").font(.headline)
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 150), spacing: 8)], spacing: 8) {
-                            preset("You + 3 bots", [true, false, false, false])
-                            preset("You + partner, 2 bots", [true, false, false, true])
-                            preset("4 humans (same device)", [true, true, true, true])
-                            preset("Watch (4 bots)", [false, false, false, false])
+                            ForEach(presets.indices, id: \.self) { presetButton($0) }
                         }
                         Button(action: onNearby) {
                             Label("Nearby iPhones (separate devices)", systemImage: "wifi")
@@ -309,10 +317,11 @@ public struct BughouseSetupView: View {
         }.tint(brand.accent)
     }
 
-    private func preset(_ title: String, _ config: [Bool]) -> some View {
-        Button { human = config } label: {
-            Text(title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 10)
-                .background(human == config ? brand.accent.opacity(0.25) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+    private func presetButton(_ i: Int) -> some View {
+        let p = presets[i]
+        return Button { human = p.config; preset = i } label: {
+            Text(p.title).font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity).padding(.vertical, 10)
+                .background(preset == i ? brand.accent.opacity(0.25) : Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         }.buttonStyle(.plain)
     }
     private func teamCard(_ title: String, seats: [BughouseSeat]) -> some View {
@@ -326,7 +335,7 @@ public struct BughouseSetupView: View {
                     Circle().fill(s.color == .white ? Color.white : Color.black)
                         .frame(width: 14, height: 14).overlay(Circle().strokeBorder(.gray, lineWidth: 1))
                     Text(s.label); Spacer()
-                    Picker("", selection: Binding(get: { human[s.rawValue] }, set: { human[s.rawValue] = $0 })) {
+                    Picker("", selection: Binding(get: { human[s.rawValue] }, set: { human[s.rawValue] = $0; preset = -1 })) {
                         Text("Human").tag(true); Text("Computer").tag(false)
                     }.pickerStyle(.segmented).frame(width: 180)
                 }
@@ -355,6 +364,7 @@ public struct BughouseGameView: View {
     @AppStorage("bug.board2Theme") private var board2Theme = "green"
     @AppStorage("bug.talkButtons") private var talkButtons = false   // false = menu, true = on-screen buttons
     private let overhead: CGFloat = 158   // two (larger) reserves + two clock rows + turn line
+    private let clockW: CGFloat = 78      // width reserved for the side clock strip flanking each board
 
     public init(brand: Brand, appearance: Appearance = .shared,
                 controller: BughouseController, onExit: @escaping () -> Void) {
@@ -398,16 +408,16 @@ public struct BughouseGameView: View {
             if focusMine && game.hasHuman {
                 let my = game.myBoard
                 HStack(alignment: .center, spacing: 14) {
-                    boardColumn(my, size: min(width * 0.58, availH - overhead))
-                    boardColumn(1 - my, size: min(width * 0.34, availH - overhead))
+                    boardColumn(my, size: min(width * 0.58 - clockW, availH - overhead))
+                    boardColumn(1 - my, size: min(width * 0.34 - clockW, availH - overhead))
                 }.frame(maxWidth: .infinity)
             } else {
-                let side = min((width - 28) / 2, availH - overhead)
+                let side = min((width - 28 - clockW * 2) / 2, availH - overhead)
                 HStack(alignment: .center, spacing: 14) { boardColumn(0, size: side); boardColumn(1, size: side) }
                     .frame(maxWidth: .infinity)
             }
         } else {
-            let side = min(width - 16, (availH - overhead * 2) / 2)
+            let side = min(width - 16 - clockW, (availH - overhead * 2) / 2)
             ScrollView { VStack(spacing: 10) { boardColumn(0, size: side); boardColumn(1, size: side) } }
         }
     }
@@ -442,10 +452,10 @@ public struct BughouseGameView: View {
         // both bottoms, Team B across both tops — the standard bughouse layout.
         let bottom: PieceColor = (b == 0) ? .white : .black
         let top = bottom.opposite
-        return VStack(spacing: 3) {
+        let column = VStack(spacing: 3) {
             HStack(spacing: 5) {
                 Text("Board \(b + 1)").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
-                teamBadge(b, top); Spacer(); clockLabel(b, top)
+                teamBadge(b, top); Spacer()
             }.frame(width: size)
             pocket(b, color: top, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == top)
             BoardView(position: bd.pos, flipped: bottom == .black, lastMove: bd.lastMove,
@@ -455,8 +465,23 @@ public struct BughouseGameView: View {
                       onMove: { f, t in game.move(board: b, from: f, to: t) },
                       onDropPiece: { k, sq in game.dropPiece(board: b, k, to: sq) })
             pocket(b, color: bottom, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == bottom)
-            HStack(spacing: 5) { turnPill(b); teamBadge(b, bottom); Spacer(); clockLabel(b, bottom) }.frame(width: size)
+            HStack(spacing: 5) { turnPill(b); teamBadge(b, bottom); Spacer() }.frame(width: size)
         }.frame(width: size)
+        // Flank each board with its two clocks on the outer side — Board 1's on the LEFT,
+        // Board 2's on the RIGHT — top colour beside the top edge, bottom colour beside the bottom.
+        return HStack(alignment: .center, spacing: 6) {
+            if b == 0 { clockStrip(b, top: top, bottom: bottom, height: size); column }
+            else { column; clockStrip(b, top: top, bottom: bottom, height: size) }
+        }
+    }
+
+    /// Vertical strip of the two clocks for a board, aligned with the board's height.
+    private func clockStrip(_ b: Int, top: PieceColor, bottom: PieceColor, height: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            clockLabel(b, top)
+            Spacer(minLength: 8)
+            clockLabel(b, bottom)
+        }.frame(width: clockW, height: height)
     }
 
     /// A small "Team A/B" badge for a seat, so the opposite-colour pairing is obvious.
