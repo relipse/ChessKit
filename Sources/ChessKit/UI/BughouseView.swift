@@ -85,12 +85,19 @@ struct BughouseMenuView: View {
 
     var body: some View {
         ZStack {
-            Theme.heroGradient(brand.accent).opacity(0.12).ignoresSafeArea()
             VStack(spacing: 16) {
                 Spacer()
-                Image(systemName: brand.systemImage).font(.system(size: 56, weight: .semibold))
-                    .foregroundStyle(.white).frame(width: 116, height: 116)
-                    .background(Theme.heroGradient(brand.accent), in: RoundedRectangle(cornerRadius: 26))
+                Group {
+                    if let logo = brand.logoAsset {
+                        Image(logo, bundle: .main).resizable().scaledToFit()
+                            .frame(width: 116, height: 116)
+                            .clipShape(RoundedRectangle(cornerRadius: 26))
+                    } else {
+                        Image(systemName: brand.systemImage).font(.system(size: 56, weight: .semibold))
+                            .foregroundStyle(.white).frame(width: 116, height: 116)
+                            .background(Theme.heroGradient(brand.accent), in: RoundedRectangle(cornerRadius: 26))
+                    }
+                }
                 Text("Bughouse Chess").font(.system(.largeTitle, design: .rounded).weight(.heavy))
                 Text("4-player team chess — capture and pass to your partner.")
                     .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
@@ -120,6 +127,17 @@ struct BughouseMenuView: View {
                 Text("4-player · Offline · Kinsman Software LLC\n\(MainMenuView.appVersion)")
                     .font(.caption2).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }.padding(24)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background {
+            if let bg = brand.backgroundAsset {
+                ZStack {
+                    Image(bg, bundle: .main).resizable().scaledToFill()
+                    Color.black.opacity(0.35)
+                }.clipped().ignoresSafeArea()
+            } else {
+                Theme.heroGradient(brand.accent).opacity(0.12).ignoresSafeArea()
+            }
         }
         .onAppear {
             launchCount += 1
