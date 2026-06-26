@@ -281,9 +281,10 @@ struct NewGameOptionsView: View {
                 if realtimeOnly {
                     Section("Mode") {
                         Label("Real-Time · No Turns", systemImage: "bolt.fill").font(.headline)
-                        Text("No turns! Both players share this device — grab any piece of either colour and move whenever you like. Orthodox rules: checkmate or stalemate ends the game.")
+                        Text("No turns! Both players share this device — grab any piece of either colour and move whenever you like.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
+                    Section("Checks") { MyTurnRulePicker() }
                 } else {
                     Section("Opponent") {
                         Picker("Mode", selection: $mode) {
@@ -426,7 +427,7 @@ struct RulesView: View {
             return ["Real-time chess — there are NO turns. Both armies are live at once.",
                     "Two players share one device and move whenever they like — no waiting.",
                     "Grab a piece of either colour and move it; the first legal move registers instantly.",
-                    "Orthodox rules: moves must be legal, and checkmate or stalemate ends the game.",
+                    "Checks are up to you (Settings): 'Checkmate' plays orthodox — no moving into check, mate or stalemate ends it; 'King Capture' ignores check — just grab the enemy king.",
                     "A brief cooldown after each move keeps the scramble playable."]
         case "Pawn Duel":
             return ["Each side starts with just a king and three pawns in opposite corners.",

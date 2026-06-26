@@ -14,10 +14,16 @@ public struct SettingsView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                Section("Difficulty") {
-                    DifficultyPicker(difficulty: Binding(
-                        get: { game.difficulty }, set: { game.difficulty = $0 }))
-                    Text("Takes effect on your next New Game.").font(.caption).foregroundStyle(.secondary)
+                if game.variant.isRealtimeOnly {
+                    // Real-time variants have no AI, so difficulty is irrelevant — offer the
+                    // check-handling rule instead.
+                    Section("Checks") { MyTurnRulePicker() }
+                } else {
+                    Section("Difficulty") {
+                        DifficultyPicker(difficulty: Binding(
+                            get: { game.difficulty }, set: { game.difficulty = $0 }))
+                        Text("Takes effect on your next New Game.").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 AppearanceSections(brand: brand, appearance: appearance)
             }
@@ -25,6 +31,19 @@ public struct SettingsView: View {
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
         }
         .tint(brand.accent)
+    }
+}
+
+/// Picks how checks behave in My Turn Chess (real-time has no natural notion of "your turn"
+/// to answer a check, so the player chooses). Persists to the shared `MyTurnChess.winRuleKey`.
+struct MyTurnRulePicker: View {
+    @AppStorage(MyTurnChess.winRuleKey) private var raw = MyTurnChess.WinRule.checkmate.rawValue
+    private var rule: MyTurnChess.WinRule { MyTurnChess.WinRule(rawValue: raw) ?? .checkmate }
+    var body: some View {
+        Picker("Checks", selection: $raw) {
+            ForEach(MyTurnChess.WinRule.allCases) { Text($0.title).tag($0.rawValue) }
+        }.pickerStyle(.segmented)
+        Text(rule.detail).font(.caption).foregroundStyle(.secondary)
     }
 }
 
