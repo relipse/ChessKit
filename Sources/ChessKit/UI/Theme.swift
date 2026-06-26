@@ -6,6 +6,9 @@ public struct Brand: Sendable {
     public var accent: Color
     public var title: String
     public var systemImage: String
+    /// Optional app-bundle image asset (the app's logo art) shown on the splash screen.
+    /// nil → fall back to `systemImage`.
+    public var logoAsset: String?
     /// Numeric App Store ID (e.g. "6743000000"); enables direct Rate/Share links once known.
     public var appStoreID: String?
     /// Game Center leaderboard ID for wins (configured in App Store Connect).
@@ -17,10 +20,12 @@ public struct Brand: Sendable {
 
     public init(accent: Color, title: String, systemImage: String = "crown.fill",
                 leaderboardID: String? = nil, appStoreID: String? = nil,
-                onlineSlug: String? = nil, onlineAllSlug: String? = nil) {
+                onlineSlug: String? = nil, onlineAllSlug: String? = nil,
+                logoAsset: String? = nil) {
         self.accent = accent
         self.title = title
         self.systemImage = systemImage
+        self.logoAsset = logoAsset
         self.appStoreID = appStoreID
         self.leaderboardID = leaderboardID
         self.onlineSlug = onlineSlug

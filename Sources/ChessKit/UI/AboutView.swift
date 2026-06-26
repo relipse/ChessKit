@@ -106,10 +106,18 @@ public struct SplashGate<Content: View>: View {
         ZStack {
             Theme.heroGradient(brand.accent).ignoresSafeArea()
             VStack(spacing: 18) {
-                Image(systemName: brand.systemImage)
-                    .font(.system(size: 72, weight: .semibold)).foregroundStyle(.white)
-                    .frame(width: 132, height: 132)
-                    .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 30))
+                if let logo = brand.logoAsset {
+                    Image(logo, bundle: .main)
+                        .resizable().scaledToFit()
+                        .frame(width: 150, height: 150)
+                        .clipShape(RoundedRectangle(cornerRadius: 33))
+                        .shadow(color: .black.opacity(0.25), radius: 12, y: 6)
+                } else {
+                    Image(systemName: brand.systemImage)
+                        .font(.system(size: 72, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: 132, height: 132)
+                        .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 30))
+                }
                 Text(brand.displayTitle)
                     .font(.system(.largeTitle, design: .rounded).weight(.heavy)).foregroundStyle(.white)
                 Spacer().frame(height: 8)
