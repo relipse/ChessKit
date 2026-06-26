@@ -111,7 +111,7 @@ public struct ChessGameView: View {
                 ZStack {
                     Image(bg, bundle: .main).resizable().scaledToFill()
                     Color.black.opacity(0.55)
-                }.ignoresSafeArea()
+                }.clipped().ignoresSafeArea()
             }
         }
         .overlay { if game.pendingPromotion != nil { promotionOverlay } }

@@ -121,12 +121,6 @@ public struct MainMenuView: View {
 
     public var body: some View {
         ZStack {
-            if let bg = brand.backgroundAsset {
-                Image(bg, bundle: .main).resizable().scaledToFill().ignoresSafeArea()
-                Color.black.opacity(0.35).ignoresSafeArea()
-            } else {
-                Theme.heroGradient(brand.accent).opacity(0.12).ignoresSafeArea()
-            }
             VStack(spacing: 18) {
                 Spacer()
                 hero
@@ -182,6 +176,20 @@ public struct MainMenuView: View {
                 }
             }
             .padding(.horizontal, 24)
+        }
+        // Background via a modifier so the (fill-scaled) art never drives layout size — otherwise
+        // on wide windows (Mac/iPad) it balloons and pushes the menu off-screen.
+        .background {
+            if let bg = brand.backgroundAsset {
+                ZStack {
+                    Image(bg, bundle: .main).resizable().scaledToFill()
+                    Color.black.opacity(0.35)
+                }
+                .clipped()
+                .ignoresSafeArea()
+            } else {
+                Theme.heroGradient(brand.accent).opacity(0.12).ignoresSafeArea()
+            }
         }
         .onAppear {
             trackLaunchAndMaybePrompt()
