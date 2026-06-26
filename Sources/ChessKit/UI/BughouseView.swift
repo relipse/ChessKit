@@ -434,6 +434,16 @@ public struct BughouseGameView: View {
                 HStack(alignment: .center, spacing: 14) { boardColumn(0, size: side); boardColumn(1, size: side) }
                     .frame(maxWidth: .infinity)
             }
+        } else if game.hasHuman {
+            // Portrait, playing: your board big, your partner's board smaller, stacked.
+            let my = game.myBoard
+            let mainW = width - 16 - clockW
+            let big = min(mainW, availH * 0.52)
+            let small = min(mainW * 0.6, big * 0.6)
+            ScrollView { VStack(spacing: 12) {
+                boardColumn(my, size: big)
+                boardColumn(1 - my, size: small)
+            } }
         } else {
             let side = min(width - 16 - clockW, (availH - overhead * 2) / 2)
             ScrollView { VStack(spacing: 10) { boardColumn(0, size: side); boardColumn(1, size: side) } }
@@ -493,12 +503,14 @@ public struct BughouseGameView: View {
         }
     }
 
-    /// Vertical strip of the two clocks for a board, aligned with the board's height.
+    /// One clock per board on its outer side — the side to move (the clock that's running),
+    /// centred on the board's height. Keeps the flank uncluttered (2 clocks total, not 4).
     private func clockStrip(_ b: Int, top: PieceColor, bottom: PieceColor, height: CGFloat) -> some View {
-        VStack(spacing: 0) {
-            clockLabel(b, top)
-            Spacer(minLength: 8)
-            clockLabel(b, bottom)
+        let active = game.boards[b].pos.sideToMove
+        return VStack(spacing: 0) {
+            Spacer()
+            clockLabel(b, active)
+            Spacer()
         }.frame(width: clockW, height: height)
     }
 
