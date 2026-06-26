@@ -37,8 +37,8 @@ public struct SettingsView: View {
 /// Picks how checks behave in My Turn Chess (real-time has no natural notion of "your turn"
 /// to answer a check, so the player chooses). Persists to the shared `MyTurnChess.winRuleKey`.
 struct MyTurnRulePicker: View {
-    @AppStorage(MyTurnChess.winRuleKey) private var raw = MyTurnChess.WinRule.checkmate.rawValue
-    private var rule: MyTurnChess.WinRule { MyTurnChess.WinRule(rawValue: raw) ?? .checkmate }
+    @AppStorage(MyTurnChess.winRuleKey) private var raw = MyTurnChess.WinRule.kingCapture.rawValue
+    private var rule: MyTurnChess.WinRule { MyTurnChess.WinRule(rawValue: raw) ?? .kingCapture }
     var body: some View {
         Picker("Checks", selection: $raw) {
             ForEach(MyTurnChess.WinRule.allCases) { Text($0.title).tag($0.rawValue) }

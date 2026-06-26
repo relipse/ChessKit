@@ -39,10 +39,10 @@ public struct MyTurnChess: ChessVariant {
     }
     /// UserDefaults key shared by the Settings UI and the rule lookup below.
     public static let winRuleKey = "ck.myturn.winRule"
-    /// The current rule (defaults to orthodox Checkmate). Read live so a change in Settings
-    /// applies to the next position evaluated.
+    /// The current rule (defaults to King Capture — the most natural fit for a no-turns
+    /// scramble). Read live so a change in Settings applies to the next position evaluated.
     public static var winRule: WinRule {
-        UserDefaults.standard.string(forKey: winRuleKey).flatMap(WinRule.init(rawValue:)) ?? .checkmate
+        UserDefaults.standard.string(forKey: winRuleKey).flatMap(WinRule.init(rawValue:)) ?? .kingCapture
     }
 
     /// Moves offered to the side to move. In Checkmate mode these are orthodox legal moves;
