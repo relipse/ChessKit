@@ -117,7 +117,7 @@ public struct ChessGameView: View {
         .overlay { if game.pendingPromotion != nil { promotionOverlay } }
         .overlay { if game.awaitingHandoff { handoffOverlay } }
         .overlay { if game.awaitingStart || game.startCountdown != nil { realtimeStartOverlay } }
-        .overlay { if let nearby, game.isRealtime { NearbyLagOverlay(service: nearby, game: game) } }
+        .overlay { if let nearby, game.isRealtime { NearbyLagOverlay(service: nearby, game: game, onLeave: { nearby.stop(); onExit?() }) } }
         .overlay { if game.status.isOver { gameOverOverlay } }
         .sheet(isPresented: $showSettings) { SettingsView(game: game, brand: brand, appearance: appearance) }
         .sheet(isPresented: $showNewGame) { NewGameSheet(game: game, brand: brand) }
@@ -144,6 +144,8 @@ public struct ChessGameView: View {
                 nearby.onGo = { [weak game] in game?.beginCountdown() }
                 // Experimental: show the opponent's piece ghosting as they drag it.
                 nearby.onRemoteDrag = { [weak game] d in game?.setGhostDrag(d) }
+                // Rematch: the peer hit New Game — reset and re-ready on the same connection.
+                nearby.onRematch = { [weak game] in tappedReady = false; game?.newGame() }
             }
             if let session = onlineSession {
                 let online = ChessOnline.shared
@@ -158,7 +160,12 @@ public struct ChessGameView: View {
                 }
             }
         }
-        .onDisappear { relayTask?.cancel(); game.stopRealtimeAI() }
+        .onDisappear { relayTask?.cancel(); game.stopRealtimeAI(); nearby?.stop() }
+        // Relay tap-selection so the opponent sees which piece you've tapped (not just drags).
+        .onChange(of: game.selected) { _, sel in
+            guard let nearby, game.isRealtime else { return }
+            if let s = sel { nearby.sendDrag(from: s, to: s) } else { nearby.sendDrag(from: 0, to: nil) }
+        }
     }
 
     // MARK: Pieces of the screen
@@ -251,7 +258,10 @@ public struct ChessGameView: View {
                   onTap: { game.tap($0) },
                   onMove: { from, to in game.move(from: from, to: to) },
                   onDropPiece: { kind, sq in game.drop(kind, to: sq) },
-                  onDragChange: nearby.map { svc in { (f: Int, t: Int?) in svc.sendDrag(from: f, to: t) } })
+                  onDragChange: { f, t in
+                      game.setLocalDragging(t != nil)        // pause incoming moves while held
+                      nearby?.sendDrag(from: f, to: t)       // relay the live drag (networked)
+                  })
             .frame(width: size, height: size)
             .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
     }
@@ -430,8 +440,17 @@ public struct ChessGameView: View {
                 Text(game.status.winner == nil ? "🤝" : (game.mode == .computer ? (game.humanWon ? "🏆" : "💥") : "🏆"))
                     .font(.system(size: 44))
                 Text(game.resultText).font(.headline).multilineTextAlignment(.center)
-                Button { showNewGame = true } label: {
-                    Text("New Game").font(.headline).foregroundStyle(.white)
+                Button {
+                    if game.mode == .nearby, let nearby {
+                        // Rematch on the same connection (don't drop to the local New-Game menu).
+                        tappedReady = false
+                        nearby.sendRematch()
+                        game.newGame()
+                    } else {
+                        showNewGame = true
+                    }
+                } label: {
+                    Text(game.mode == .nearby ? "Rematch" : "New Game").font(.headline).foregroundStyle(.white)
                         .padding(.horizontal, 28).padding(.vertical, 12)
                         .background(brand.accent, in: Capsule())
                 }
@@ -448,8 +467,29 @@ public struct ChessGameView: View {
 struct NearbyLagOverlay: View {
     @ObservedObject var service: NearbyService
     @ObservedObject var game: GameController
+    var onLeave: () -> Void
     var body: some View {
-        if service.peerLagging, !game.status.isOver, !game.awaitingStart, game.startCountdown == nil {
+        if service.status == .disconnected {
+            // Hard disconnect — the peer left or lost the connection for good.
+            ZStack {
+                Color.black.opacity(0.92).ignoresSafeArea()
+                VStack(spacing: 14) {
+                    Image(systemName: "wifi.slash").font(.system(size: 44)).foregroundStyle(.white.opacity(0.9))
+                    Text("Opponent disconnected").font(.headline).foregroundStyle(.white)
+                    Text("They left the game or lost connection.")
+                        .font(.subheadline).foregroundStyle(.white.opacity(0.75))
+                        .multilineTextAlignment(.center).padding(.horizontal, 36)
+                    Button { onLeave() } label: {
+                        Label("Leave Game", systemImage: "arrow.backward")
+                            .font(.headline).foregroundStyle(.white)
+                            .padding(.horizontal, 24).padding(.vertical, 12)
+                            .background(.white.opacity(0.18), in: Capsule())
+                    }.padding(.top, 6)
+                }
+            }
+            .transition(.opacity)
+        } else if service.peerLagging, !game.status.isOver, !game.awaitingStart, game.startCountdown == nil {
+            // Transient lag — pause the board until heartbeats resume, then auto-clear.
             ZStack {
                 Color.black.opacity(0.9).ignoresSafeArea()
                 VStack(spacing: 14) {

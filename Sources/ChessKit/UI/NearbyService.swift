@@ -4,7 +4,7 @@ import MultipeerConnectivity
 
 /// A wire packet exchanged between two nearby devices.
 struct NearbyPacket: Codable {
-    enum Kind: String, Codable { case start, move, resign, ready, go, ping, drag }
+    enum Kind: String, Codable { case start, move, resign, ready, go, ping, drag, rematch }
     var kind: Kind
     var move: Move?
     var hostIsWhite: Bool?
@@ -41,6 +41,8 @@ public final class NearbyService: NSObject, ObservableObject {
     public var onGo: (() -> Void)?
     /// Experimental: the peer is dragging a piece (from, hovered-square) — nil when they let go.
     public var onRemoteDrag: (((from: Int, to: Int)?) -> Void)?
+    /// The peer started a rematch — reset and play again on the same connection.
+    public var onRematch: (() -> Void)?
 
     private var localReady = false
     private var heartbeat: Task<Void, Never>?
@@ -91,13 +93,16 @@ public final class NearbyService: NSObject, ObservableObject {
     }
 
     public func stop() {
-        advertiser?.stopAdvertisingPeer()
-        browser?.stopBrowsingForPeers()
+        // Fully tear the transport down so a *fresh* Nearby session works next time — leaving the
+        // advertiser/browser alive left the framework unable to connect a second time.
+        advertiser?.stopAdvertisingPeer(); advertiser?.delegate = nil; advertiser = nil
+        browser?.stopBrowsingForPeers(); browser?.delegate = nil; browser = nil
         session.disconnect()
         heartbeat?.cancel(); heartbeat = nil
         status = .idle
         ready = false
         peerReady = false; bothGo = false; peerLagging = false; localReady = false
+        peerName = nil; isHost = false
         foundPeers = []
     }
 
@@ -132,6 +137,11 @@ public final class NearbyService: NSObject, ObservableObject {
         if isHost { send(NearbyPacket(kind: .go)); fireGo() }   // guest fires on receiving .go
     }
     private func fireGo() { guard !bothGo else { return }; bothGo = true; onGo?() }
+
+    /// Start a rematch on the same connection (resets the lock-step gate so both sides can
+    /// re-ready). Sent reliably so the peer resets too.
+    public func sendRematch() { resetLockstep(); send(NearbyPacket(kind: .rematch)) }
+    private func resetLockstep() { localReady = false; peerReady = false; bothGo = false }
 
     /// Send a heartbeat every second and flag the peer as lagging if we haven't heard back in 3s.
     private func startHeartbeat() {
@@ -198,6 +208,8 @@ extension NearbyService: MCSessionDelegate {
             case .drag:
                 if let f = packet.dragFrom, let t = packet.dragTo { onRemoteDrag?((f, t)) }
                 else { onRemoteDrag?(nil) }
+            case .rematch:
+                resetLockstep(); onRematch?()
             }
         }
     }

@@ -35,6 +35,8 @@ public struct BoardView: View {
     @State private var dragFrom: Int?
     @State private var dragLocation: CGPoint = .zero
     @State private var dragOver: Int?
+    /// Piece captured at drag-start so the lifted glyph stays stable even if the board updates.
+    @State private var draggingPiece: Piece?
 
     public init(position: Position, flipped: Bool = false,
                 lastMove: (from: Int, to: Int)? = nil, selected: Int? = nil,
@@ -99,18 +101,28 @@ public struct BoardView: View {
                     }
                 }
             }
-            // Experimental: the opponent's / computer's piece, shown ghosting toward its target.
+            // Experimental: what the opponent / computer is doing right now.
             if let g = ghostDrag, let piece = position.squares[g.from], piece.color != hiddenColor {
-                PieceGlyph(piece: piece, size: sq * 1.1, appearance: appearance)
-                    .frame(width: sq * 1.1, height: sq * 1.1)
-                    .position(center(of: g.to, sq: sq))
-                    .opacity(0.7)
-                    .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
-                    .allowsHitTesting(false)
-                    .animation(.easeOut(duration: 0.18), value: g.to)
+                if g.from == g.to {
+                    // They've tapped / picked up this piece — ring it so you can see their choice.
+                    RoundedRectangle(cornerRadius: 4)
+                        .strokeBorder(Color.yellow.opacity(0.95), lineWidth: sq * 0.09)
+                        .frame(width: sq * 0.96, height: sq * 0.96)
+                        .position(center(of: g.to, sq: sq))
+                        .allowsHitTesting(false)
+                } else {
+                    // They're dragging it — ghost it toward the target square.
+                    PieceGlyph(piece: piece, size: sq * 1.1, appearance: appearance)
+                        .frame(width: sq * 1.1, height: sq * 1.1)
+                        .position(center(of: g.to, sq: sq))
+                        .opacity(0.7)
+                        .shadow(color: .black.opacity(0.25), radius: 5, y: 2)
+                        .allowsHitTesting(false)
+                        .animation(.easeOut(duration: 0.18), value: g.to)
+                }
             }
             // The lifted piece follows the finger during a drag.
-            if let from = dragFrom, let piece = position.squares[from], piece.color != hiddenColor {
+            if let from = dragFrom, let piece = draggingPiece ?? position.squares[from], piece.color != hiddenColor {
                 PieceGlyph(piece: piece, size: sq * 1.15, appearance: appearance)
                     .frame(width: sq * 1.15, height: sq * 1.15)
                     .position(dragLocation)
@@ -137,6 +149,7 @@ public struct BoardView: View {
                     guard let from = square(at: value.startLocation),
                           let p = position.squares[from], p.color != hiddenColor else { return }
                     dragFrom = from
+                    draggingPiece = p
                     onTap?(from)   // select so legal targets light up
                 }
                 dragLocation = value.location
@@ -146,7 +159,7 @@ public struct BoardView: View {
             }
             .onEnded { value in
                 let started = dragFrom
-                defer { dragFrom = nil; dragOver = nil }
+                defer { dragFrom = nil; dragOver = nil; draggingPiece = nil }
                 if let f = started { onDragChange?(f, nil) }   // clear the opponent's ghost
                 guard let from = started, let to = square(at: value.location), from != to else { return }
                 onMove?(from, to)

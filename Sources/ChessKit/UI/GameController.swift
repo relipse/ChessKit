@@ -98,6 +98,18 @@ public final class GameController: ObservableObject {
     @Published public var ghostDrag: (from: Int, to: Int)?
     public func setGhostDrag(_ d: (from: Int, to: Int)?) { ghostDrag = d }
 
+    /// True while the local player is physically holding a piece. Incoming opponent/computer
+    /// moves are deferred until they let go, so the board never re-renders out from under the
+    /// piece they're dragging.
+    public private(set) var localDragging = false
+    private var deferredMoves: [Move] = []
+    public func setLocalDragging(_ on: Bool) {
+        localDragging = on
+        guard !on, !deferredMoves.isEmpty else { return }
+        let pending = deferredMoves; deferredMoves = []
+        for m in pending { applyRemoteMove(m) }   // flush the instant the drag ends
+    }
+
     // Tap-to-move selection state.
     @Published public var selected: Int?
     @Published public var targets: Set<Int> = []
@@ -445,13 +457,15 @@ public final class GameController: ObservableObject {
     /// Apply a move received from the nearby/internet peer.
     public func applyRemoteMove(_ rawMove: Move) {
         guard mode == .nearby, !status.isOver else { return }
+        if localDragging { deferredMoves.append(rawMove); return }   // don't disturb the held piece
         if isRealtime {
             // No turns: the remote move is always the *other* colour. Set the side to move so the
-            // move resolves/validates, then apply. First move to land on a square wins.
+            // move resolves/validates, then apply. First move to land on a square wins. (Selection
+            // is left intact so a piece you're mid-interaction with isn't reset.)
             position.sideToMove = localColor.opposite
             let move = resolve(rawMove)
             guard variant.legalMoves(position).contains(move) else { return }
-            clearSelection(); apply(move); return
+            apply(move); return
         }
         guard position.sideToMove != localColor else { return }
         let move = resolve(rawMove)
@@ -519,6 +533,7 @@ public final class GameController: ObservableObject {
                 let wait = max(0.5, base) * Double.random(in: 0.8...1.3)
                 try? await Task.sleep(nanoseconds: UInt64(wait * 1_000_000_000))
                 if Task.isCancelled || status.isOver || awaitingStart { continue }   // wait for "GO"
+                if localDragging { continue }   // don't move while the human is holding a piece
                 let color = aiColors.count == 1 ? aiColors[0] : (aiColors.randomElement() ?? aiColors[0])
                 var snap = position; snap.sideToMove = color
                 let before = position
@@ -531,7 +546,7 @@ public final class GameController: ObservableObject {
                     ghostDrag = (mv.from, mv.to)
                     try? await Task.sleep(nanoseconds: 320_000_000)
                     ghostDrag = nil
-                    if Task.isCancelled || status.isOver || position != before { continue }
+                    if Task.isCancelled || status.isOver || position != before || localDragging { continue }
                 }
                 position.sideToMove = color
                 apply(mv)
