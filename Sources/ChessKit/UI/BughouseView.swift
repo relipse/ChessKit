@@ -447,16 +447,21 @@ public struct BughouseGameView: View {
     @ViewBuilder
     private func boards(landscape: Bool, width: CGFloat, availH: CGFloat) -> some View {
         if landscape {
+            // In landscape the clocks flank the boards (no clock rows), so the vertical chrome is
+            // only the labels + the two slim reserves — keep it small so the boards fill the height.
+            let landOverhead: CGFloat = 88
+            let perBoard = (width - clockW * 2 - 30) / 2
             if focusMine && game.hasHuman {
                 let my = game.myBoard
-                HStack(alignment: .center, spacing: 14) {
-                    boardColumn(my, size: min(width * 0.58 - clockW, availH - overhead))
-                    boardColumn(1 - my, size: min(width * 0.34 - clockW, availH - overhead))
-                }.frame(maxWidth: .infinity)
+                let avail = width - clockW * 2 - 34
+                HStack(alignment: .center, spacing: 12) {
+                    boardColumn(my, size: min(avail * 0.62, availH - landOverhead), landscape: true)
+                    boardColumn(1 - my, size: min(avail * 0.38, availH - landOverhead), landscape: true)
+                }.frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                let side = min((width - 28 - clockW * 2) / 2, availH - overhead)
-                HStack(alignment: .center, spacing: 14) { boardColumn(0, size: side); boardColumn(1, size: side) }
-                    .frame(maxWidth: .infinity)
+                let side = min(perBoard, availH - landOverhead)
+                HStack(alignment: .center, spacing: 16) { boardColumn(0, size: side, landscape: true); boardColumn(1, size: side, landscape: true) }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         } else if game.hasHuman {
             // Portrait, playing: your board big, your partner's board smaller, stacked.
@@ -500,26 +505,26 @@ public struct BughouseGameView: View {
             .background(brand.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 10))
     }
 
-    private func boardColumn(_ b: Int, size: CGFloat) -> some View {
+    private func boardColumn(_ b: Int, size: CGFloat, landscape: Bool = false) -> some View {
         let bd = game.boards[b]
         // Mirror the two boards: Board 1 has White at the bottom, Board 2 has Black at the bottom.
         // That puts each TEAM (partners, opposite colours) together along one edge — Team A across
         // both bottoms, Team B across both tops — the standard bughouse layout.
         let bottom: PieceColor = (b == 0) ? .white : .black
         let top = bottom.opposite
-        let column = VStack(spacing: 3) {
+        let column = VStack(spacing: landscape ? 1 : 3) {
             HStack(spacing: 5) {
                 Text("Board \(b + 1)").font(.caption2.weight(.bold)).foregroundStyle(.secondary)
                 teamBadge(b, top); Spacer()
             }.frame(width: size)
-            pocket(b, color: top, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == top)
+            pocket(b, color: top, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == top, slim: landscape)
             BoardView(position: bd.pos, flipped: bottom == .black, lastMove: bd.lastMove,
                       selected: bd.selected, targets: bd.targets,
                       checkSquare: checkSquare(bd.pos), size: size, boardTheme: theme(b), appearance: appearance,
                       onTap: { game.tap(board: b, $0) },
                       onMove: { f, t in game.move(board: b, from: f, to: t) },
                       onDropPiece: { k, sq in game.dropPiece(board: b, k, to: sq) })
-            pocket(b, color: bottom, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == bottom)
+            pocket(b, color: bottom, size: size, interactive: game.isHumanToMove(b) && bd.pos.sideToMove == bottom, slim: landscape)
             HStack(spacing: 5) { turnPill(b); teamBadge(b, bottom); Spacer() }.frame(width: size)
         }.frame(width: size)
         // Flank each board with its two clocks on the outer side — Board 1's on the LEFT,
@@ -564,12 +569,13 @@ public struct BughouseGameView: View {
         .background(active ? AnyShapeStyle(low ? AnyShapeStyle(.red) : AnyShapeStyle(brand.accent)) : AnyShapeStyle(Color.primary.opacity(0.08)), in: Capsule())
     }
 
-    private func pocket(_ b: Int, color: PieceColor, size: CGFloat, interactive: Bool) -> some View {
+    private func pocket(_ b: Int, color: PieceColor, size: CGFloat, interactive: Bool, slim: Bool = false) -> some View {
         PocketView(pocket: game.boards[b].pos.pockets[color] ?? Pocket(), color: color,
                    selected: color == game.boards[b].pos.sideToMove ? game.boards[b].pocketSel : nil,
                    interactive: interactive, accent: brand.accent, compact: true, appearance: appearance,
                    onSelect: { game.selectPocket(board: b, $0) })
-            .frame(width: size)
+            .frame(width: size, height: slim ? 26 : nil)
+            .clipped()
     }
 
     private func turnPill(_ b: Int) -> some View {
